@@ -32,3 +32,4 @@ bm25_chunks.pkl
 *.log
 
 plan_md.md
+data/*
