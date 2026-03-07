@@ -1,0 +1,14 @@
+langchain
+langchain-text-splitters
+langchain-community
+langchain-chroma
+chromadb
+langchain-google-genai
+bs4
+python-dotenv
+langchain-groq
+groq
+pdfplumber
+rank_bm25
+cohere
+sentence-transformers

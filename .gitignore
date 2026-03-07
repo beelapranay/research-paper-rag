@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# Env files
+.env
+.env.*
+
+# Chroma / vector store
+chroma_db/
+
+# BM25 artifacts
+bm25.pkl
+bm25_chunks.pkl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+plan_md.md
