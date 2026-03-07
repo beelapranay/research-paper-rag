@@ -62,8 +62,3 @@ python scripts/main.py
 
 ## Notes
 - Cohere reranking is optional. If `COHERE_API_KEY` is not set, a local cross‑encoder is used instead.
-<<<<<<< HEAD
-- If you have multiple PDFs on unrelated topics, consider adding metadata filters or query routing.
-=======
-- If you have multiple PDFs on unrelated topics, consider adding metadata filters or query routing.
->>>>>>> ab02efb (made changes to .gitignore)
