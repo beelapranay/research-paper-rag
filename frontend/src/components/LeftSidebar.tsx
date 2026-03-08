@@ -3,6 +3,8 @@ import { useAppStore } from "@/store/useAppStore";
 import UploadZone from "./UploadZone";
 import PaperCard from "./PaperCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiFetch } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const LeftSidebar = () => {
   const papers = useAppStore((s) => s.papers);
@@ -11,27 +13,59 @@ const LeftSidebar = () => {
   const removePaper = useAppStore((s) => s.removePaper);
   const selectAllPapers = useAppStore((s) => s.selectAllPapers);
   const deselectAllPapers = useAppStore((s) => s.deselectAllPapers);
+  const addPaper = useAppStore((s) => s.addPaper);
+  const updatePaperStatus = useAppStore((s) => s.updatePaperStatus);
+  const { toast } = useToast();
 
   const indexedCount = papers.filter((p) => p.status === "indexed").length;
   const allSelected = indexedCount > 0 && selectedPaperIds.size === indexedCount;
 
-  const handleUpload = (files: File[]) => {
-    // Mock: add papers with indexing status
-    files.forEach((file) => {
-      const id = crypto.randomUUID();
-      useAppStore.getState().addPaper({
-        id,
-        title: file.name.replace(".pdf", ""),
+  const handleUpload = async (files: File[]) => {
+    if (!files.length) return;
+
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+
+    const res = await apiFetch("/papers/upload", {
+      method: "POST",
+      body: form,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast({ title: "Upload failed", description: err.detail || "Try again." });
+      return;
+    }
+
+    const created = await res.json();
+    created.forEach((p: any) => {
+      addPaper({
+        id: p.id,
+        title: p.source_file.replace(/\.pdf$/i, ""),
         authors: "Unknown",
         year: new Date().getFullYear(),
-        status: "indexing",
-        filename: file.name,
+        status: p.status,
+        filename: p.source_file,
       });
-      // Simulate indexing completing
-      setTimeout(() => {
-        useAppStore.getState().updatePaperStatus(id, "indexed");
-      }, 3000);
     });
+
+    // Poll status
+    const poll = async () => {
+      const res2 = await apiFetch("/papers");
+      if (!res2.ok) return;
+      const data = await res2.json();
+      data.forEach((p: any) => updatePaperStatus(p.id, p.status));
+    };
+    setTimeout(poll, 2000);
+  };
+
+  const handleDelete = async (id: string) => {
+    const res = await apiFetch(`/papers/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      toast({ title: "Delete failed" });
+      return;
+    }
+    removePaper(id);
   };
 
   return (
@@ -64,7 +98,7 @@ const LeftSidebar = () => {
               paper={paper}
               selected={selectedPaperIds.has(paper.id)}
               onToggle={() => togglePaperSelection(paper.id)}
-              onDelete={() => removePaper(paper.id)}
+              onDelete={() => handleDelete(paper.id)}
             />
           ))}
           {papers.length === 0 && (

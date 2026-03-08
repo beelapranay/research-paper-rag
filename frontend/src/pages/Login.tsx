@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, setToken } from "@/lib/api";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -13,15 +14,31 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    // Mock — will be wired to backend later
-    setTimeout(() => {
+
+    try {
+      const res = await apiFetch("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Login failed");
+      }
+
+      const data = await res.json();
+      setToken(data.access_token);
+      navigate("/");
+    } catch (err: any) {
+      toast({ title: "Login failed", description: err.message || "Please try again." });
+    } finally {
       setLoading(false);
-      toast({ title: "Login not connected", description: "Backend auth is not wired up yet." });
-    }, 800);
+    }
   };
 
   return (

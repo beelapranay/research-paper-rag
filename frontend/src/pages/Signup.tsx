@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch } from "@/lib/api";
 
 const Signup = () => {
   const [name, setName] = useState("");
@@ -14,14 +15,33 @@ const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const res = await apiFetch("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ full_name: name, email, password }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Signup failed");
+      }
+
+      toast({
+        title: "Check your email",
+        description: "Verify your account, then sign in.",
+      });
+      navigate("/login");
+    } catch (err: any) {
+      toast({ title: "Signup failed", description: err.message || "Please try again." });
+    } finally {
       setLoading(false);
-      toast({ title: "Signup not connected", description: "Backend auth is not wired up yet." });
-    }, 800);
+    }
   };
 
   return (

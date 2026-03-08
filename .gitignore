@@ -33,5 +33,15 @@ bm25_chunks.pkl
 
 plan_md.md
 ui_plan.md
-integrant_plan.md
+integration_plan.md
 data/*
+
+# Backend runtime artifacts
+backend/app.db
+backend/uploads/
+
+# Backend/Frontend env files
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
