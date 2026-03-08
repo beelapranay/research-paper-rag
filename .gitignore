@@ -32,4 +32,6 @@ bm25_chunks.pkl
 *.log
 
 plan_md.md
+ui_plan.md
+integrant_plan.md
 data/*

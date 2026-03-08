@@ -1,0 +1,46 @@
+import { useRef, useEffect } from "react";
+import { useAppStore } from "@/store/useAppStore";
+import UserMessage from "./UserMessage";
+import AssistantMessage from "./AssistantMessage";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
+const MessageThread = () => {
+  const messages = useAppStore((s) => s.messages);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-3 px-8">
+          <h2 className="font-display text-2xl font-semibold text-foreground">
+            Ask about your papers
+          </h2>
+          <p className="text-muted-foreground text-sm max-w-md">
+            Upload research papers to the library, select which ones to query, and ask questions. Citations link directly to source evidence.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="flex-1">
+      <div className="p-4 space-y-4 max-w-3xl mx-auto">
+        {messages.map((msg) =>
+          msg.role === "user" ? (
+            <UserMessage key={msg.id} content={msg.content} />
+          ) : (
+            <AssistantMessage key={msg.id} message={msg} />
+          )
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </ScrollArea>
+  );
+};
+
+export default MessageThread;
