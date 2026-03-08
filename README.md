@@ -1,64 +1,97 @@
-# Research Paper Q&A - RAG
+# Research Paper Q&A — RAG
 
-A local RAG pipeline for answering questions across multiple research PDFs using hybrid retrieval (BM25 + vector), cross‑encoder reranking, and citation‑enforced generation.
+## Summary
+- **Problem**: Answer questions across multiple research PDFs with grounded, cited responses.
+- **What I Built**: A full-stack RAG system with PDF ingestion, hybrid retrieval, cross-encoder reranking, citation-enforced generation, and a React UI.
+- **Tech Stack**: FastAPI, React + Vite, LangChain, ChromaDB, BM25, Groq LLM, Google GenAI embeddings, Resend (email verification).
+- **Key Decisions**: Hybrid BM25+vector with RRF; reranking for precision; strict citation validation; email-verified auth for uploads.
+- **Run It**: Start backend on `:8000`, frontend on `:8080`, then sign up, verify email, upload PDFs, chat.
 
 ## Features
 - PDF ingestion with metadata, cleaning, chunking, and Chroma persistence
 - BM25 index built from stored chunks
-- Hybrid retrieval with RRF merge
-- Cross‑encoder reranking (Cohere or local fallback)
-- Citation‑enforced generation with validation
+- Hybrid retrieval with RRF merge + cross-encoder reranking
+- Citation-enforced generation with validation
+- JWT auth + email verification (Resend)
+- React UI with library, chat, and retrieval insights
 
 ## Project Structure
 ```
 .
-├── scripts/
-│   ├── ingest.py
+├── backend/
 │   ├── main.py
-│   ├── bm25_index.py
-│   └── verify_week1.py
+│   ├── routers/
+│   │   ├── auth.py
+│   │   ├── papers.py
+│   │   └── chat.py
+│   ├── db.py
+│   ├── db_papers.py
+│   ├── email_utils.py
+│   ├── ingest_pipeline.py
+│   ├── ingest_worker.py
+│   ├── requirements.txt
+│   └── app.db (runtime)
+├── frontend/
+│   ├── src/
+│   └── package.json
 ├── rag/
-│   ├── __init__.py
-│   ├── tools.py
+│   ├── ingest.py
 │   ├── retriever.py
 │   ├── reranker.py
 │   ├── bm25_index.py
-│   ├── output_parser.py
-│   └── verify_week1.py
-├── data/
-├── chroma_db/
-├── bm25.pkl
-├── bm25_chunks.pkl
-├── .env
+│   └── output_parser.py
+├── scripts/
+│   └── ingest.py
+├── chroma_db/ (runtime)
 └── requirements.txt
 ```
 
 ## Setup
-1. Install dependencies
+
+### 1) Backend
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r backend/requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-2. Configure environment variables in `.env`
+Create `.env` in repo root:
 ```
 GROQ_API_KEY=
 GOOGLE_API_KEY=
 COHERE_API_KEY=
+RESEND_API_KEY=
+RESEND_FROM=onboarding@resend.dev
+FRONTEND_URL=http://localhost:8080
+JWT_SECRET=change_me
+JWT_EXPIRE_MINUTES=1440
 LANGSMITH_TRACING=false
 ```
 
-3. Add PDFs to `./data`
-
-4. Run ingestion and indexing
+Run backend:
 ```bash
-python scripts/ingest.py
-python scripts/bm25_index.py
+python -m uvicorn backend.main:app --reload --port 8000
 ```
 
-5. Start the CLI
+### 2) Frontend
 ```bash
-python scripts/main.py
+cd frontend
+npm install
+npm run dev
 ```
+
+Create `frontend/.env`:
+```
+VITE_API_URL=http://localhost:8000
+```
+
+## Usage
+1. Sign up in the UI.
+2. Verify email via the link (Resend).
+3. Upload PDFs.
+4. Ask questions in chat.
 
 ## Notes
-- Cohere reranking is optional. If `COHERE_API_KEY` is not set, a local cross‑encoder is used instead.
+- Resend requires a verified sender. Use `onboarding@resend.dev` if you don’t own a domain.
+- The backend SSE `/chat` endpoint streams tokens and returns retrieval metadata.
