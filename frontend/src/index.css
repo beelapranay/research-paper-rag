@@ -111,3 +111,12 @@
     font-family: 'Playfair Display', serif;
   }
 }
+
+.hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+}

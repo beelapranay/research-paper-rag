@@ -10,8 +10,6 @@ from rag.retriever import hybrid_retrieve
 
 load_dotenv()
 
-# Retrieval uses hybrid BM25 + vector with RRF (see retriever.py).
-
 
 def _build_index_if_needed() -> None:
     from rag.ingest import build_index
@@ -55,7 +53,7 @@ def _format_sources() -> str:
     sources = []
     for metadata in metadatas:
         if isinstance(metadata, dict):
-            source = metadata.get("source")
+            source = metadata.get("source") or metadata.get("source_file")
             if source:
                 sources.append(source)
 
@@ -72,7 +70,7 @@ def retrieve_info(query: str):
     if _is_ingestion_question(query):
         return _format_sources()
 
-    docs, rrf_scores = hybrid_retrieve(query)
+    docs, meta_map = hybrid_retrieve(query)
     if not docs:
         return []
 
@@ -82,10 +80,10 @@ def retrieve_info(query: str):
         if doc.metadata:
             source = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
         key = (doc.page_content, str(source))
-        score = rrf_scores.get(key)
+        meta = meta_map.get(key, {})
         formatted_docs.append({
             "content": doc.page_content,
-            "score": float(score) if score is not None else None,
+            "score": meta.get("rerank_score") or meta.get("rrf_score"),
             "source": source,
             "title": doc.metadata.get("title") if doc.metadata else None,
             "authors": doc.metadata.get("authors") if doc.metadata else None,

@@ -4,8 +4,12 @@ interface ReferencedPapersListProps {
   chunks: RetrievedChunk[];
 }
 
+const basename = (source: string) => {
+  if (!source) return "unknown";
+  return source.replace("\\", "/").split("/").pop() || source;
+};
+
 const ReferencedPapersList = ({ chunks }: ReferencedPapersListProps) => {
-  // Deduplicate by source file
   const seen = new Set<string>();
   const papers = chunks.filter((c) => {
     if (seen.has(c.source)) return false;
@@ -20,7 +24,7 @@ const ReferencedPapersList = ({ chunks }: ReferencedPapersListProps) => {
           <span className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
           <div className="min-w-0">
             <p className="text-xs font-medium text-foreground leading-tight">{paper.authors}</p>
-            <p className="text-xs text-muted-foreground">{paper.source} · {paper.year}</p>
+            <p className="text-xs text-muted-foreground">{basename(paper.source)} · {paper.year}</p>
           </div>
         </div>
       ))}

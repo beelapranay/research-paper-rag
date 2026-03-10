@@ -13,6 +13,11 @@ const getScoreColor = (score: number) => {
   return "bg-score-low text-white";
 };
 
+const basename = (source: string) => {
+  if (!source) return "unknown";
+  return source.replace("\\", "/").split("/").pop() || source;
+};
+
 const ChunkCard = ({ chunk }: ChunkCardProps) => {
   const highlightedChunkId = useAppStore((s) => s.highlightedChunkId);
   const isHighlighted = highlightedChunkId === chunk.id;
@@ -26,7 +31,7 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
     <div
       id={`chunk-${chunk.id}`}
       className={cn(
-        "rounded-lg border p-3 transition-all duration-300",
+        "rounded-lg border p-3 transition-all duration-300 overflow-hidden",
         isHighlighted
           ? "border-primary bg-chunk-highlight shadow-md ring-1 ring-primary/30"
           : "border-border bg-card hover:border-border/80"
@@ -34,14 +39,18 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
     >
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-foreground truncate">{chunk.authors}</p>
-          <p className="text-xs text-muted-foreground">{chunk.source} · {chunk.year}</p>
+          <p className="text-xs font-medium text-foreground truncate">
+            {chunk.authors}
+          </p>
+          <p className="text-xs text-muted-foreground break-all">
+            {basename(chunk.source)} · {chunk.year}
+          </p>
         </div>
         <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full shrink-0", getScoreColor(chunk.rerankScore))}>
           {chunk.rerankScore.toFixed(2)}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
+      <p className="text-xs leading-relaxed text-muted-foreground break-words">
         {truncatedContent}
         {chunk.content.length > 180 && (
           <button

@@ -1,17 +1,13 @@
-# main.py
-from langchain_groq import ChatGroq
-from rag.tools import retrieve_info
 from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+from rag.tools import retrieve_info
 import os
 import re
 from rag.output_parser import parse_response
 
-load_dotenv()
-
-llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0,
-)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 system_prompt = (
     "You are a research assistant. Answer using ONLY the provided context. "
@@ -50,62 +46,11 @@ def is_ingestion_topic(text: str) -> bool:
     return any(keyword in normalized for keyword in keywords)
 
 
-print("--- Groq RAG CLI Ready ---")
+print("--- Gemini RAG CLI Ready ---")
 print("Type 'exit' to quit.")
 
 last_topic_query = ""
 chat_history = []  # Persists across turns
-
-
-def _citation_label(authors: str | None, year: str | None, fallback_source: str) -> str:
-    author_label = "Unknown"
-    if authors and authors.strip() and authors.strip().lower() != "unknown":
-        if "," in authors:
-            author_label = authors.split(",", 1)[0].strip()
-        elif " and " in authors:
-            author_label = authors.split(" and ", 1)[0].strip()
-        else:
-            author_label = authors.strip()
-        if (" and " in authors) or ("," in authors):
-            author_label = f"{author_label} et al."
-
-    year_label = year if year and year.strip() else "Unknown"
-    if author_label == "Unknown":
-        base = os.path.splitext(os.path.basename(fallback_source))[0] if fallback_source else "Unknown"
-        author_label = base or "Unknown"
-
-    return f"[{author_label}, {year_label}]"
-
-
-def _format_context(chunks: list[dict]) -> str:
-    lines = []
-    for chunk in chunks:
-        label = _citation_label(
-            authors=chunk.get("authors"),
-            year=chunk.get("year"),
-            fallback_source=chunk.get("source") or "unknown",
-        )
-        score = chunk.get("score")
-        score_str = f"{score:.2f}" if isinstance(score, float) else "n/a"
-        content = chunk.get("content", "")
-        lines.append(f"{label} (score: {score_str})\n{content}")
-    return "\n\n".join(lines)
-
-
-def _citations_valid(answer: str) -> bool:
-    # Every non-empty sentence must contain a citation like [Author et al., 2020]
-    sentences = re.split(r"(?<=[.!?])\s+", answer.strip())
-    if not sentences:
-        return False
-    pattern = re.compile(r"\[[^\]]+?,\s*\d{4}\]")
-    for sent in sentences:
-        if not sent.strip():
-            continue
-        if not any(ch.isalnum() for ch in sent):
-            continue
-        if not pattern.search(sent):
-            return False
-    return True
 
 while True:
     try:
@@ -151,9 +96,55 @@ while True:
         print("No relevant context found in your documents.")
         continue
 
+    def _citation_label(authors: str | None, year: str | None, fallback_source: str) -> str:
+        author_label = "Unknown"
+        if authors and authors.strip() and authors.strip().lower() != "unknown":
+            if "," in authors:
+                author_label = authors.split(",", 1)[0].strip()
+            elif " and " in authors:
+                author_label = authors.split(" and ", 1)[0].strip()
+            else:
+                author_label = authors.strip()
+            if (" and " in authors) or ("," in authors):
+                author_label = f"{author_label} et al."
+
+        year_label = year if year and year.strip() else "Unknown"
+        if author_label == "Unknown":
+            base = os.path.splitext(os.path.basename(fallback_source))[0] if fallback_source else "Unknown"
+            author_label = base or "Unknown"
+
+        return f"[{author_label}, {year_label}]"
+
+    def _format_context(chunks: list[dict]) -> str:
+        lines = []
+        for chunk in chunks:
+            label = _citation_label(
+                authors=chunk.get("authors"),
+                year=chunk.get("year"),
+                fallback_source=chunk.get("source") or "unknown",
+            )
+            score = chunk.get("score")
+            score_str = f"{score:.2f}" if isinstance(score, float) else "n/a"
+            content = chunk.get("content", "")
+            lines.append(f"{label} (score: {score_str})\n{content}")
+        return "\n\n".join(lines)
+
+    def _citations_valid(answer: str) -> bool:
+        sentences = re.split(r"(?<=[.!?])\s+", answer.strip())
+        if not sentences:
+            return False
+        pattern = re.compile(r"\[[^\]]+?,\s*\d{4}\]")
+        for sent in sentences:
+            if not sent.strip():
+                continue
+            if not any(ch.isalnum() for ch in sent):
+                continue
+            if not pattern.search(sent):
+                return False
+        return True
+
     formatted_context = _format_context(context)
 
-    # Step 2: Build messages with full chat history
     user_message = {
         "role": "user",
         "content": f"Question: {model_question}\n\nContext:\n{formatted_context}",
@@ -165,7 +156,6 @@ while True:
         user_message,
     ]
 
-    # Step 3: Stream response and capture it
     print("\nAssistant: ", end="", flush=True)
     full_response = ""
 
@@ -176,7 +166,6 @@ while True:
 
     print()
 
-    # Step 4: Validate citations; re-prompt once if needed
     if not _citations_valid(full_response):
         reprompt = {
             "role": "user",
@@ -223,6 +212,5 @@ while True:
         print()
         rag_response, citations_ok = parse_response(full_response, context)
 
-    # Step 5: Append this turn to history
     chat_history.append(user_message)
     chat_history.append({"role": "assistant", "content": full_response})

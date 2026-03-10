@@ -25,8 +25,7 @@ const InputBar = () => {
     setIsStreaming(true);
     setText("");
 
-    const freshMessages = useAppStore.getState().messages;
-    const history = [...freshMessages, userMsg].map((m) => ({ role: m.role, content: m.content }));
+    const history = [...messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
 
     const res = await apiFetch("/chat", {
       method: "POST",
@@ -50,57 +49,45 @@ const InputBar = () => {
     let finalCitations: any[] = [];
     let finalChunks: any[] = [];
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
 
-        for (const part of parts) {
-          if (part.startsWith("event: token")) {
-            const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
-            if (dataLine) {
-              const token = dataLine.replace("data: ", "");
-              assistantText += token;
-              updateLastAssistantMessage(assistantText);
-            }
+      for (const part of parts) {
+        if (part.startsWith("event: token")) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+          if (dataLine) {
+            const token = dataLine.replace("data: ", "");
+            assistantText += token;
+            updateLastAssistantMessage(assistantText);
           }
+        }
 
-          if (part.startsWith("event: metadata")) {
-            const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
-            if (dataLine) {
-              try {
-                const payload = JSON.parse(dataLine.replace("data: ", ""));
-                finalCitations = payload.citations || [];
-                finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
-                  id: c.id || `chunk_${crypto.randomUUID()}_${i}`,
-                  content: c.content,
-                  source: c.source_file,
-                  authors: c.authors || "Unknown",
-                  year: c.year || 0,
-                  bm25Rank: c.bm25_rank || 0,
-                  vectorRank: c.vector_rank || 0,
-                  rrfScore: c.rrf_score || 0,
-                  rerankScore: c.rerank_score || 0,
-                }));
-              } catch {
-                console.error("Failed to parse metadata from stream");
-              }
-            }
+        if (part.startsWith("event: metadata")) {
+          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+          if (dataLine) {
+            const payload = JSON.parse(dataLine.replace("data: ", ""));
+            finalCitations = payload.citations || [];
+            finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
+              id: c.id || `chunk_${i}`,
+              content: c.content,
+              source: c.source_file,
+              authors: c.authors || "Unknown",
+              year: c.year || 0,
+              bm25Rank: c.bm25_rank || 0,
+              vectorRank: c.vector_rank || 0,
+              rrfScore: c.rrf_score || 0,
+              rerankScore: c.rerank_score || 0,
+            }));
           }
         }
       }
-
-      finalizeAssistantMessage(finalCitations, finalChunks);
-    } catch (err) {
-      console.error("Streaming error:", err);
-      updateLastAssistantMessage(assistantText || "Error: streaming failed.");
-      setIsStreaming(false);
-    } finally {
-      reader.cancel().catch(() => {});
     }
+
+    finalizeAssistantMessage(finalCitations, finalChunks);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -129,7 +116,7 @@ const InputBar = () => {
           placeholder="Ask about your papers..."
           disabled={isStreaming}
           rows={1}
-          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 font-body"
+          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 font-body hide-scrollbar"
         />
         <Button
           onClick={handleSend}

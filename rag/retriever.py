@@ -1,7 +1,6 @@
 # retriever.py
 from __future__ import annotations
 
-import logging
 import os
 from typing import Dict, Iterable, List, Tuple
 
@@ -11,8 +10,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from rag.bm25_index import bm25_search
 from rag.reranker import rerank_documents
-
-logger = logging.getLogger(__name__)
 
 
 CHROMA_DIR = "./chroma_db"
@@ -57,15 +54,11 @@ def _rrf_merge(
     return merged_docs, scores
 
 
-def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], float]]:
+def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], dict]]:
     if not os.path.isdir(CHROMA_DIR):
         raise FileNotFoundError("Chroma DB not found. Run ingestion first.")
 
-    try:
-        vectorstore = _load_vectorstore()
-    except Exception as exc:
-        logger.exception("Failed to load Chroma vectorstore")
-        raise RuntimeError(f"Vectorstore is corrupted or unreadable: {exc}") from exc
+    vectorstore = _load_vectorstore()
     bm25_docs = bm25_search(query, k=K_BM25)
     vector_docs = vectorstore.max_marginal_relevance_search(
         query,
@@ -74,6 +67,9 @@ def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], f
         lambda_mult=MMR_LAMBDA,
     )
 
+    bm25_rank = { _doc_key(doc): i + 1 for i, doc in enumerate(bm25_docs) }
+    vector_rank = { _doc_key(doc): i + 1 for i, doc in enumerate(vector_docs) }
+
     merged_docs, rrf_scores = _rrf_merge([bm25_docs, vector_docs], rrf_k=RRF_K)
     merged_docs = merged_docs[:MERGED_K]
 
@@ -81,14 +77,26 @@ def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], f
         query=query,
         docs=merged_docs,
         top_n=5,
-        score_threshold=0.3,
+        score_threshold=0.0,
     )
 
-    if reranked_docs:
-        score_map: Dict[tuple[str, str], float] = {}
-        for idx, score in rerank_scores.items():
-            key = _doc_key(merged_docs[idx])
-            score_map[key] = score
-        return reranked_docs, score_map
+    meta_map: Dict[tuple[str, str], dict] = {}
+    for doc in merged_docs:
+        key = _doc_key(doc)
+        meta_map[key] = {
+            "bm25_rank": bm25_rank.get(key, 0),
+            "vector_rank": vector_rank.get(key, 0),
+            "rrf_score": float(rrf_scores.get(key, 0.0)),
+            "rerank_score": 0.0,
+        }
 
-    return merged_docs, rrf_scores
+    # Apply rerank scores if available
+    for idx, score in rerank_scores.items():
+        if 0 <= idx < len(merged_docs):
+            key = _doc_key(merged_docs[idx])
+            meta_map[key]["rerank_score"] = float(score)
+
+    if reranked_docs:
+        return reranked_docs, meta_map
+
+    return merged_docs, meta_map

@@ -1,4 +1,3 @@
-import logging
 import os
 import re
 import shutil
@@ -6,8 +5,6 @@ from collections import Counter, defaultdict
 from typing import Iterable
 
 from dotenv import load_dotenv
-
-logger = logging.getLogger(__name__)
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -101,6 +98,13 @@ def _strip_headers_footers(docs: list) -> None:
             pages[i].page_content = "\n".join(filtered)
 
 
+def _is_name_line(line: str) -> bool:
+    if "@" in line:
+        return False
+    caps = re.findall(r"\b[A-Z][a-z]+\b", line)
+    return len(caps) >= 2 and len(line) <= 120
+
+
 def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]:
     lines = [ln.strip() for ln in first_page_text.splitlines() if ln.strip()]
     title = ""
@@ -112,10 +116,15 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
             title = line
             break
 
-    for line in lines[1:5]:
+    for line in lines[1:8]:
         if "abstract" in line.lower():
             continue
-        if any(ch.isalpha() for ch in line) and ("," in line or " and " in line):
+        if "@" in line:
+            continue
+        if "," in line or " and " in line:
+            authors = line
+            break
+        if _is_name_line(line):
             authors = line
             break
 
@@ -183,10 +192,9 @@ def build_index(
                 if src:
                     existing_sources.add((os.path.abspath(src), str(uid)))
 
-            uid_str = str(user_id) if user_id else ""
             pdf_files = [
                 path for path in pdf_files
-                if (os.path.abspath(path), uid_str) not in existing_sources
+                if (os.path.abspath(path), str(user_id or "")) not in existing_sources
             ]
             if not pdf_files:
                 print("All PDFs are already indexed. Pass force_rebuild=True to re-index.")
@@ -212,11 +220,7 @@ def build_index(
         doc.page_content = _clean_text(doc.page_content)
 
     # Remove docs that are essentially empty after cleaning
-    before_count = len(docs)
     docs = [doc for doc in docs if len(doc.page_content) > 100]
-    dropped = before_count - len(docs)
-    if dropped:
-        logger.info("Dropped %d document(s) with ≤100 characters after cleaning.", dropped)
 
     if not docs:
         print("No content found after cleaning. Check your PDFs.")
@@ -261,6 +265,7 @@ def build_index(
             embedding_function=embedding,
         )
         vectorstore.add_documents(splits)
+        vectorstore.persist()
     else:
         vectorstore = Chroma.from_documents(
             documents=splits,

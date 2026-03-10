@@ -4,6 +4,11 @@ interface ScoreBreakdownTableProps {
   chunks: RetrievedChunk[];
 }
 
+const basename = (source: string) => {
+  if (!source) return "unknown";
+  return source.replace("\\", "/").split("/").pop() || source;
+};
+
 const ScoreBreakdownTable = ({ chunks }: ScoreBreakdownTableProps) => {
   return (
     <div className="overflow-x-auto">
@@ -20,7 +25,7 @@ const ScoreBreakdownTable = ({ chunks }: ScoreBreakdownTableProps) => {
         <tbody>
           {chunks.map((chunk) => (
             <tr key={chunk.id} className="border-b border-border/50 last:border-0">
-              <td className="py-1.5 px-2 text-foreground truncate max-w-[100px]">{chunk.source}</td>
+              <td className="py-1.5 px-2 text-foreground truncate max-w-[140px]">{basename(chunk.source)}</td>
               <td className="py-1.5 px-2 text-right text-muted-foreground">#{chunk.bm25Rank}</td>
               <td className="py-1.5 px-2 text-right text-muted-foreground">#{chunk.vectorRank}</td>
               <td className="py-1.5 px-2 text-right text-muted-foreground">{chunk.rrfScore.toFixed(3)}</td>
