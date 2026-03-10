@@ -25,7 +25,8 @@ const InputBar = () => {
     setIsStreaming(true);
     setText("");
 
-    const history = [...messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
+    const freshMessages = useAppStore.getState().messages;
+    const history = [...freshMessages, userMsg].map((m) => ({ role: m.role, content: m.content }));
 
     const res = await apiFetch("/chat", {
       method: "POST",
@@ -49,45 +50,57 @@ const InputBar = () => {
     let finalCitations: any[] = [];
     let finalChunks: any[] = [];
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop() || "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
 
-      for (const part of parts) {
-        if (part.startsWith("event: token")) {
-          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
-          if (dataLine) {
-            const token = dataLine.replace("data: ", "");
-            assistantText += token;
-            updateLastAssistantMessage(assistantText);
+        for (const part of parts) {
+          if (part.startsWith("event: token")) {
+            const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+            if (dataLine) {
+              const token = dataLine.replace("data: ", "");
+              assistantText += token;
+              updateLastAssistantMessage(assistantText);
+            }
           }
-        }
 
-        if (part.startsWith("event: metadata")) {
-          const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
-          if (dataLine) {
-            const payload = JSON.parse(dataLine.replace("data: ", ""));
-            finalCitations = payload.citations || [];
-            finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
-              id: c.id || `chunk_${i}`,
-              content: c.content,
-              source: c.source_file,
-              authors: c.authors || "Unknown",
-              year: c.year || 0,
-              bm25Rank: c.bm25_rank || 0,
-              vectorRank: c.vector_rank || 0,
-              rrfScore: c.rrf_score || 0,
-              rerankScore: c.rerank_score || 0,
-            }));
+          if (part.startsWith("event: metadata")) {
+            const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
+            if (dataLine) {
+              try {
+                const payload = JSON.parse(dataLine.replace("data: ", ""));
+                finalCitations = payload.citations || [];
+                finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
+                  id: c.id || `chunk_${crypto.randomUUID()}_${i}`,
+                  content: c.content,
+                  source: c.source_file,
+                  authors: c.authors || "Unknown",
+                  year: c.year || 0,
+                  bm25Rank: c.bm25_rank || 0,
+                  vectorRank: c.vector_rank || 0,
+                  rrfScore: c.rrf_score || 0,
+                  rerankScore: c.rerank_score || 0,
+                }));
+              } catch {
+                console.error("Failed to parse metadata from stream");
+              }
+            }
           }
         }
       }
-    }
 
-    finalizeAssistantMessage(finalCitations, finalChunks);
+      finalizeAssistantMessage(finalCitations, finalChunks);
+    } catch (err) {
+      console.error("Streaming error:", err);
+      updateLastAssistantMessage(assistantText || "Error: streaming failed.");
+      setIsStreaming(false);
+    } finally {
+      reader.cancel().catch(() => {});
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

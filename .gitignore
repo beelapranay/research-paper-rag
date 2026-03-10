@@ -34,6 +34,7 @@ bm25_chunks.pkl
 plan_md.md
 ui_plan.md
 integration_plan.md
+changes.md
 data/*
 
 # Backend runtime artifacts

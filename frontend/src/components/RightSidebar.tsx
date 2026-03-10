@@ -53,7 +53,7 @@ const RightSidebar = () => {
         <Section title="Retrieved Chunks" icon={Layers}>
           <div className="space-y-2">
             {activeChunks.map((chunk, i) => (
-              <ChunkCard key={chunk.id} chunk={chunk} index={i} />
+              <ChunkCard key={chunk.id} chunk={chunk} />
             ))}
           </div>
         </Section>

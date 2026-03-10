@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from typing import List
 
@@ -10,6 +11,8 @@ from dotenv import load_dotenv
 from backend.deps import get_current_user
 from rag.retriever import hybrid_retrieve
 from langchain_groq import ChatGroq
+
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -38,7 +41,13 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
 
     def generate():
         # 1. Retrieve + rerank (currently ignores paper_ids; will add filtering later)
-        docs, scores = hybrid_retrieve(request.query)
+        try:
+            docs, scores = hybrid_retrieve(request.query)
+        except Exception as exc:
+            logger.exception("Retrieval failed for query: %s", request.query)
+            yield f"event: token\ndata: Error: retrieval failed — {exc}\n\n"
+            yield "event: done\ndata: {}\n\n"
+            return
 
         # 2. Build context text
         context_lines = []

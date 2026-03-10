@@ -66,10 +66,16 @@ def _load_bm25() -> tuple[BM25Okapi, list[Document]]:
     if not os.path.isfile(BM25_INDEX_PATH) or not os.path.isfile(BM25_CHUNKS_PATH):
         build_bm25_index(force_rebuild=False)
 
-    with open(BM25_INDEX_PATH, "rb") as f:
-        bm25 = pickle.load(f)
-    with open(BM25_CHUNKS_PATH, "rb") as f:
-        chunks = pickle.load(f)
+    try:
+        with open(BM25_INDEX_PATH, "rb") as f:
+            bm25 = pickle.load(f)
+        with open(BM25_CHUNKS_PATH, "rb") as f:
+            chunks = pickle.load(f)
+    except (pickle.UnpicklingError, EOFError, ValueError, OSError) as exc:
+        raise RuntimeError(
+            f"BM25 index files are corrupted or unreadable: {exc}. "
+            "Delete bm25.pkl / bm25_chunks.pkl and re-run ingestion."
+        ) from exc
 
     return bm25, chunks
 

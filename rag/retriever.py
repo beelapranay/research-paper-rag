@@ -1,6 +1,7 @@
 # retriever.py
 from __future__ import annotations
 
+import logging
 import os
 from typing import Dict, Iterable, List, Tuple
 
@@ -10,6 +11,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from rag.bm25_index import bm25_search
 from rag.reranker import rerank_documents
+
+logger = logging.getLogger(__name__)
 
 
 CHROMA_DIR = "./chroma_db"
@@ -58,7 +61,11 @@ def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], f
     if not os.path.isdir(CHROMA_DIR):
         raise FileNotFoundError("Chroma DB not found. Run ingestion first.")
 
-    vectorstore = _load_vectorstore()
+    try:
+        vectorstore = _load_vectorstore()
+    except Exception as exc:
+        logger.exception("Failed to load Chroma vectorstore")
+        raise RuntimeError(f"Vectorstore is corrupted or unreadable: {exc}") from exc
     bm25_docs = bm25_search(query, k=K_BM25)
     vector_docs = vectorstore.max_marginal_relevance_search(
         query,
@@ -79,10 +86,9 @@ def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], f
 
     if reranked_docs:
         score_map: Dict[tuple[str, str], float] = {}
-        for idx, doc in enumerate(merged_docs):
-            key = _doc_key(doc)
-            if idx in rerank_scores:
-                score_map[key] = rerank_scores[idx]
+        for idx, score in rerank_scores.items():
+            key = _doc_key(merged_docs[idx])
+            score_map[key] = score
         return reranked_docs, score_map
 
     return merged_docs, rrf_scores

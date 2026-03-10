@@ -24,5 +24,5 @@ def create_verification_token() -> str:
 
 def create_access_token(subject: str) -> str:
     expire = datetime.utcnow() + timedelta(minutes=JWT_EXPIRE_MINUTES)
-    to_encode = {"sub": subject, "exp": expire}
+    to_encode = {"sub": subject, "exp": int(expire.timestamp())}
     return jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")

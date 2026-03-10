@@ -5,7 +5,6 @@ import { useState } from "react";
 
 interface ChunkCardProps {
   chunk: RetrievedChunk;
-  index: number;
 }
 
 const getScoreColor = (score: number) => {
@@ -14,7 +13,7 @@ const getScoreColor = (score: number) => {
   return "bg-score-low text-white";
 };
 
-const ChunkCard = ({ chunk, index }: ChunkCardProps) => {
+const ChunkCard = ({ chunk }: ChunkCardProps) => {
   const highlightedChunkId = useAppStore((s) => s.highlightedChunkId);
   const isHighlighted = highlightedChunkId === chunk.id;
   const [expanded, setExpanded] = useState(false);

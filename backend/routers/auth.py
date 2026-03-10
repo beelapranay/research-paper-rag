@@ -1,4 +1,9 @@
+import sqlite3
+import time
+import uuid
+
 from fastapi import APIRouter, HTTPException
+
 from backend import db
 from backend.auth_utils import (
     create_access_token,
@@ -13,8 +18,6 @@ from backend.schemas import (
     TokenResponse,
 )
 from backend.email_utils import send_verification_email
-import uuid
-import time
 
 router = APIRouter()
 
@@ -36,28 +39,34 @@ def _check_resend_rate(email: str) -> None:
     _resend_attempts[email] = attempts
 
 
+_GENERIC_REGISTER_MSG = "If this email is not already registered, a verification link has been sent."
+
+
 @router.post("/register")
 def register(payload: RegisterRequest):
     existing = db.get_user_by_email(payload.email)
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered.")
+        return {"message": _GENERIC_REGISTER_MSG}
 
     token = create_verification_token()
     user_id = str(uuid.uuid4())
-    db.create_user(
-        user_id=user_id,
-        full_name=payload.full_name,
-        email=payload.email,
-        hashed_password=hash_password(payload.password),
-        verification_token=token,
-    )
+    try:
+        db.create_user(
+            user_id=user_id,
+            full_name=payload.full_name,
+            email=payload.email,
+            hashed_password=hash_password(payload.password),
+            verification_token=token,
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Email already registered.")
 
     try:
         send_verification_email(payload.email, token)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to send verification email: {exc}")
 
-    return {"message": "Check your email to verify your account."}
+    return {"message": _GENERIC_REGISTER_MSG}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -82,7 +91,9 @@ def verify(token: str):
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired verification token.")
 
-    db.mark_verified(user["id"])
+    updated = db.mark_verified(user["id"], token)
+    if not updated:
+        raise HTTPException(status_code=400, detail="Token already used or expired.")
     access_token = create_access_token(user["id"])
     return TokenResponse(access_token=access_token)
 

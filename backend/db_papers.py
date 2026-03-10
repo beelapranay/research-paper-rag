@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime
 import sqlite3
 from typing import Optional
 
 from backend.db import get_conn
+
+logger = logging.getLogger(__name__)
 
 
 def init_papers_table() -> None:
@@ -34,12 +37,19 @@ def insert_paper(
     source_file: str,
     status: str,
 ) -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """
-            INSERT INTO papers (id, user_id, title, authors, year, source_file, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (paper_id, user_id, title, authors, year, source_file, status, datetime.utcnow().isoformat()),
-        )
-        conn.commit()
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO papers (id, user_id, title, authors, year, source_file, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (paper_id, user_id, title, authors, year, source_file, status, datetime.utcnow().isoformat()),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError:
+        logger.warning("Duplicate paper insert attempted: %s", paper_id)
+        raise
+    except Exception:
+        logger.exception("Failed to insert paper %s", paper_id)
+        raise

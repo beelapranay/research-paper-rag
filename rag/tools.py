@@ -14,7 +14,7 @@ load_dotenv()
 
 
 def _build_index_if_needed() -> None:
-    from ingest import build_index
+    from rag.ingest import build_index
     build_index()
 
 

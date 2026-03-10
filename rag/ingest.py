@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import shutil
@@ -5,6 +6,8 @@ from collections import Counter, defaultdict
 from typing import Iterable
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -180,9 +183,10 @@ def build_index(
                 if src:
                     existing_sources.add((os.path.abspath(src), str(uid)))
 
+            uid_str = str(user_id) if user_id else ""
             pdf_files = [
                 path for path in pdf_files
-                if (os.path.abspath(path), str(user_id or "")) not in existing_sources
+                if (os.path.abspath(path), uid_str) not in existing_sources
             ]
             if not pdf_files:
                 print("All PDFs are already indexed. Pass force_rebuild=True to re-index.")
@@ -208,7 +212,11 @@ def build_index(
         doc.page_content = _clean_text(doc.page_content)
 
     # Remove docs that are essentially empty after cleaning
+    before_count = len(docs)
     docs = [doc for doc in docs if len(doc.page_content) > 100]
+    dropped = before_count - len(docs)
+    if dropped:
+        logger.info("Dropped %d document(s) with ≤100 characters after cleaning.", dropped)
 
     if not docs:
         print("No content found after cleaning. Check your PDFs.")
@@ -253,8 +261,6 @@ def build_index(
             embedding_function=embedding,
         )
         vectorstore.add_documents(splits)
-        if hasattr(vectorstore, "persist"):
-            vectorstore.persist()
     else:
         vectorstore = Chroma.from_documents(
             documents=splits,

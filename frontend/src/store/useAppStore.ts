@@ -67,6 +67,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateLastAssistantMessage: (content) =>
     set((s) => {
       const msgs = [...s.messages];
+      if (msgs.length === 0) return { messages: msgs };
       const last = msgs[msgs.length - 1];
       if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, content };
       return { messages: msgs };
@@ -74,6 +75,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   finalizeAssistantMessage: (citations, chunks) =>
     set((s) => {
       const msgs = [...s.messages];
+      if (msgs.length === 0) return { messages: msgs, activeChunks: chunks, isStreaming: false };
       const last = msgs[msgs.length - 1];
       if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, citations, chunks, isStreaming: false };
       return { messages: msgs, activeChunks: chunks, isStreaming: false };

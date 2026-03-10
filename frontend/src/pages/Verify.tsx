@@ -7,32 +7,40 @@ const Verify = () => {
   const navigate = useNavigate();
   const [status, setStatus] = useState("Verifying your email...");
 
+  const token = searchParams.get("token");
+
   useEffect(() => {
-    const token = searchParams.get("token");
     if (!token) {
       setStatus("Missing verification token.");
       return;
     }
 
+    let cancelled = false;
+
     const run = async () => {
       try {
         const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-        const res = await fetch(`${apiUrl}/auth/verify?token=${encodeURIComponent(token)}`);
+        const url = new URL(`${apiUrl}/auth/verify`);
+        url.searchParams.set("token", token);
+        const res = await fetch(url.toString());
+        if (cancelled) return;
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.detail || "Verification failed");
         }
         const data = await res.json();
+        if (cancelled) return;
         setToken(data.access_token);
         setStatus("Verified! Redirecting...");
         setTimeout(() => navigate("/"), 800);
       } catch (e: any) {
-        setStatus(e.message || "Verification failed.");
+        if (!cancelled) setStatus(e.message || "Verification failed.");
       }
     };
 
     run();
-  }, [searchParams, navigate]);
+    return () => { cancelled = true; };
+  }, [token, navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">

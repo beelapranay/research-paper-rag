@@ -20,20 +20,27 @@ const Index = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let cancelled = false;
     const loadPapers = async () => {
-      const res = await apiFetch("/papers");
-      if (res.status === 401) {
-        navigate("/login");
-        return;
+      try {
+        const res = await apiFetch("/papers");
+        if (cancelled) return;
+        if (res.status === 401) {
+          navigate("/login");
+          return;
+        }
+        if (!res.ok) {
+          toast({ title: "Failed to load papers" });
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) setPapers(data);
+      } catch {
+        if (!cancelled) toast({ title: "Failed to load papers" });
       }
-      if (!res.ok) {
-        toast({ title: "Failed to load papers" });
-        return;
-      }
-      const data = await res.json();
-      setPapers(data);
     };
     loadPapers();
+    return () => { cancelled = true; };
   }, [setPapers, toast, navigate]);
 
   if (isMobile) {

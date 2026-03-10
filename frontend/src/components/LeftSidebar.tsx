@@ -1,10 +1,21 @@
+import { useEffect, useRef, useState } from "react";
 import { BookOpen } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
+import type { PaperStatus } from "@/types";
 import UploadZone from "./UploadZone";
 import PaperCard from "./PaperCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiFetch } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+
+interface PaperResponse {
+  id: string;
+  source_file: string;
+  status: PaperStatus;
+  title?: string;
+  authors?: string;
+  year?: number;
+}
 
 const LeftSidebar = () => {
   const papers = useAppStore((s) => s.papers);
@@ -16,6 +27,14 @@ const LeftSidebar = () => {
   const addPaper = useAppStore((s) => s.addPaper);
   const updatePaperStatus = useAppStore((s) => s.updatePaperStatus);
   const { toast } = useToast();
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+    };
+  }, []);
 
   const indexedCount = papers.filter((p) => p.status === "indexed").length;
   const allSelected = indexedCount > 0 && selectedPaperIds.size === indexedCount;
@@ -23,40 +42,59 @@ const LeftSidebar = () => {
   const handleUpload = async (files: File[]) => {
     if (!files.length) return;
 
+    setIsUploading(true);
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
 
-    const res = await apiFetch("/papers/upload", {
-      method: "POST",
-      body: form,
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      toast({ title: "Upload failed", description: err.detail || "Try again." });
-      return;
-    }
-
-    const created = await res.json();
-    created.forEach((p: any) => {
-      addPaper({
-        id: p.id,
-        title: p.source_file.replace(/\.pdf$/i, ""),
-        authors: "Unknown",
-        year: new Date().getFullYear(),
-        status: p.status,
-        filename: p.source_file,
+    try {
+      const res = await apiFetch("/papers/upload", {
+        method: "POST",
+        body: form,
       });
-    });
 
-    // Poll status
-    const poll = async () => {
-      const res2 = await apiFetch("/papers");
-      if (!res2.ok) return;
-      const data = await res2.json();
-      data.forEach((p: any) => updatePaperStatus(p.id, p.status));
-    };
-    setTimeout(poll, 2000);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast({ title: "Upload failed", description: err.detail || "Try again." });
+        return;
+      }
+
+      const created: PaperResponse[] = await res.json();
+      if (!Array.isArray(created)) {
+        toast({ title: "Upload failed", description: "Unexpected server response." });
+        return;
+      }
+      created.forEach((p) => {
+        addPaper({
+          id: p.id,
+          title: p.source_file.replace(/\.pdf$/i, ""),
+          authors: "Unknown",
+          year: new Date().getFullYear(),
+          status: p.status,
+          filename: p.source_file,
+        });
+      });
+
+      // Poll status until no papers are still processing
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      const poll = async () => {
+        try {
+          const res2 = await apiFetch("/papers");
+          if (!res2.ok) return;
+          const data: PaperResponse[] = await res2.json();
+          if (!Array.isArray(data)) return;
+          data.forEach((p) => updatePaperStatus(p.id, p.status));
+          const hasProcessing = data.some((p) => p.status === "processing");
+          if (hasProcessing) {
+            pollTimeoutRef.current = setTimeout(poll, 2000);
+          }
+        } catch {
+          // Network error — stop polling silently
+        }
+      };
+      pollTimeoutRef.current = setTimeout(poll, 2000);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -75,6 +113,9 @@ const LeftSidebar = () => {
           <BookOpen className="h-5 w-5 text-primary" />
           <h2 className="font-display text-lg font-semibold">Paper Library</h2>
         </div>
+        {isUploading && (
+          <p className="text-xs text-muted-foreground mb-2">Uploading...</p>
+        )}
         <UploadZone onUpload={handleUpload} />
       </div>
 

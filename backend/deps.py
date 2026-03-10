@@ -9,6 +9,8 @@ security = HTTPBearer()
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
@@ -23,5 +25,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         user = cur.fetchone()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
+    if not user["is_verified"]:
+        raise HTTPException(status_code=403, detail="Email not verified")
 
     return user

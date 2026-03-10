@@ -26,8 +26,9 @@ def init_db() -> None:
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
     finally:
@@ -64,13 +65,22 @@ def get_user_by_token(token: str) -> Optional[sqlite3.Row]:
         return cur.fetchone()
 
 
-def mark_verified(user_id: str) -> None:
+def mark_verified(user_id: str, token: str | None = None) -> bool:
+    """Atomically verify user; returns True if a row was actually updated."""
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?",
-            (user_id,),
-        )
+        if token:
+            cur = conn.execute(
+                "UPDATE users SET is_verified = 1, verification_token = NULL "
+                "WHERE id = ? AND verification_token = ?",
+                (user_id, token),
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE users SET is_verified = 1, verification_token = NULL WHERE id = ?",
+                (user_id,),
+            )
         conn.commit()
+        return cur.rowcount > 0
 
 
 def update_verification_token(user_id: str, token: str) -> None:

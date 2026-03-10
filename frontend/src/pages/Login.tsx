@@ -31,7 +31,10 @@ const Login = () => {
         throw new Error(err.detail || "Login failed");
       }
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (!data?.access_token) {
+        throw new Error("Invalid response from server");
+      }
       setToken(data.access_token);
       navigate("/");
     } catch (err: any) {

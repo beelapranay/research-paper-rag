@@ -17,12 +17,21 @@ const CitationChip = ({ citation }: CitationChipProps) => {
 
   const isHighlighted = matchingChunk && highlightedChunkId === matchingChunk.id;
 
+  if (!matchingChunk) {
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border border-muted text-muted-foreground"
+        title="Source chunk not found"
+      >
+        [{citation.ref}]
+      </span>
+    );
+  }
+
   return (
     <button
       onClick={() => {
-        if (matchingChunk) {
-          setHighlightedChunkId(isHighlighted ? null : matchingChunk.id);
-        }
+        setHighlightedChunkId(isHighlighted ? null : matchingChunk.id);
       }}
       className={cn(
         "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-all cursor-pointer",
