@@ -36,6 +36,14 @@ def _clean_text(text: str) -> str:
         text = text.replace(src, dst)
 
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    # Fix garbled arrow symbols from PDF extraction of mathematical notation
+    text = text.replace("---~", "→")
+    text = text.replace("--~", "→")
+    text = re.sub(r"(?<!\-)-→", "→", text)  # -→ to →
+    text = text.replace("-->", "→")
+    text = text.replace("->", "→")
+    text = text.replace("<--", "←")
+    text = text.replace("<-", "←")
     # Insert space between a lowercase letter and an uppercase letter (camelCase joins
     # from PDF extraction, e.g. "rewardstates" won't match but "rewardStates" will).
     text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)

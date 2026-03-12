@@ -94,7 +94,8 @@ function processNode(
 
   // String leaf — swap placeholders for CitationBadge components
   if (typeof node === "string") {
-    if (PLACEHOLDER_RE.test(node)) {
+    // Use .includes() instead of regex.test() to avoid stateful lastIndex bug with /g flag
+    if (node.includes("%%CITE_")) {
       return injectCitations(node, chunks);
     }
     return node;
