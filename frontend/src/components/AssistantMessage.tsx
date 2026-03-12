@@ -27,6 +27,26 @@ function insertCiteHtml(markdown: string): string {
   return markdown.replace(CITE_RE, (_match, num) => `<cite data-num="${num}"></cite>`);
 }
 
+/**
+ * Fix malformed markdown from LLM output:
+ * - Split overlong heading lines (##) into a heading + paragraph
+ */
+function fixMarkdown(md: string): string {
+  return md.replace(/^(#{1,3})\s+(.+)$/gm, (_match, hashes, text) => {
+    // If heading text is short, keep as-is
+    if (text.length <= 80) return `${hashes} ${text}`;
+    // Find the first sentence boundary to use as the heading
+    const sentenceEnd = text.search(/[.!?]\s/);
+    if (sentenceEnd > 0 && sentenceEnd <= 80) {
+      const heading = text.slice(0, sentenceEnd + 1).trim();
+      const rest = text.slice(sentenceEnd + 1).trim();
+      return rest ? `${hashes} ${heading}\n\n${rest}` : `${hashes} ${heading}`;
+    }
+    // No good split point — just strip the heading markers
+    return text;
+  });
+}
+
 const CitationBadge = ({
   num,
   chunk,
@@ -65,7 +85,7 @@ const AssistantMessage = ({ message }: AssistantMessageProps) => {
   const chunks = message.chunks;
 
   const processedContent = useMemo(
-    () => insertCiteHtml(message.content),
+    () => insertCiteHtml(fixMarkdown(message.content)),
     [message.content]
   );
 
