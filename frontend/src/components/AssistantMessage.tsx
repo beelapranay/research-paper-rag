@@ -10,12 +10,18 @@ interface AssistantMessageProps {
 }
 
 const CITE_RE = /\[(\d+)\]/g;
+const PLACEHOLDER_RE = /%%CITE_(\d+)%%/g;
 
 const stripUuidPrefix = (name: string) =>
   name.replace(
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
     "",
   );
+
+/** Replace [1], [2] etc. with placeholders so ReactMarkdown won't parse them as link refs. */
+function escapeCitations(markdown: string): string {
+  return markdown.replace(CITE_RE, (_match, num) => `%%CITE_${num}%%`);
+}
 
 const CitationBadge = ({
   num,
@@ -47,15 +53,11 @@ const CitationBadge = ({
       <span className="inline-flex items-center justify-center min-w-[1rem] h-[1rem] px-[3px] text-[9px] font-bold not-italic rounded-full bg-primary/15 text-primary leading-none">
         {num}
       </span>
-      {chunk && (
-        <span className="max-w-[10rem] truncate hidden sm:inline">
-          {stripUuidPrefix(chunk.title || chunk.source)}
-        </span>
-      )}
     </button>
   );
 };
 
+/** Replace %%CITE_N%% placeholders in rendered text nodes with CitationBadge components. */
 function injectCitations(
   text: string,
   chunks?: RetrievedChunk[]
@@ -63,7 +65,7 @@ function injectCitations(
   const result: (string | JSX.Element)[] = [];
   let lastIndex = 0;
 
-  for (const match of text.matchAll(CITE_RE)) {
+  for (const match of text.matchAll(PLACEHOLDER_RE)) {
     const start = match.index!;
     if (start > lastIndex) {
       result.push(text.slice(lastIndex, start));
@@ -91,7 +93,7 @@ function processChildren(
   if (!children) return children;
   const childArray = Array.isArray(children) ? children : [children];
   return childArray.flatMap((child) => {
-    if (typeof child === "string" && CITE_RE.test(child)) {
+    if (typeof child === "string" && PLACEHOLDER_RE.test(child)) {
       return injectCitations(child, chunks);
     }
     return child;
@@ -100,6 +102,11 @@ function processChildren(
 
 const AssistantMessage = ({ message }: AssistantMessageProps) => {
   const chunks = message.chunks;
+
+  const escapedContent = useMemo(
+    () => escapeCitations(message.content),
+    [message.content]
+  );
 
   const components: Components = useMemo(
     () => ({
@@ -182,7 +189,7 @@ const AssistantMessage = ({ message }: AssistantMessageProps) => {
         <div className="rounded-xl rounded-tl-sm bg-card border border-border px-4 py-3 shadow-sm">
           <div className="text-sm text-foreground font-body">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-              {message.content}
+              {escapedContent}
             </ReactMarkdown>
           </div>
           {message.isStreaming && (
