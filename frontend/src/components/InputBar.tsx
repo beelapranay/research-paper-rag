@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
 import { apiFetch } from "@/lib/api";
 
+const persistMessage = (id: string, role: string, content: string, chunks?: any[]) => {
+  apiFetch("/chat/save", {
+    method: "POST",
+    body: JSON.stringify({ id, role, content, chunks: chunks || [] }),
+  }).catch(() => {});
+};
+
 const InputBar = () => {
   const [text, setText] = useState("");
   const isStreaming = useAppStore((s) => s.isStreaming);
@@ -41,8 +48,10 @@ const InputBar = () => {
     lastSentPaperIds.current = new Set(selectedPaperIds);
 
     const userMsg = { id: crypto.randomUUID(), role: "user" as const, content: trimmed };
+    const assistantId = crypto.randomUUID();
     addMessage(userMsg);
-    addMessage({ id: crypto.randomUUID(), role: "assistant", content: "", isStreaming: true });
+    addMessage({ id: assistantId, role: "assistant", content: "", isStreaming: true });
+    persistMessage(userMsg.id, "user", trimmed);
     setIsStreaming(true);
     setText("");
 
@@ -110,6 +119,21 @@ const InputBar = () => {
     }
 
     finalizeAssistantMessage(finalChunks);
+
+    // Persist the assistant response with chunk metadata
+    const chunksForDb = finalChunks.map((c: any) => ({
+      id: c.id,
+      content: c.content,
+      source_file: c.source,
+      title: c.title,
+      authors: c.authors,
+      year: c.year,
+      bm25_rank: c.bm25Rank,
+      vector_rank: c.vectorRank,
+      rrf_score: c.rrfScore,
+      rerank_score: c.rerankScore,
+    }));
+    persistMessage(assistantId, "assistant", assistantText, chunksForDb);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

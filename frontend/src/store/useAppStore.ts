@@ -19,6 +19,7 @@ interface AppState {
   deselectAllPapers: () => void;
 
   // Chat actions
+  setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
   updateLastAssistantMessage: (content: string) => void;
   finalizeAssistantMessage: (chunks: RetrievedChunk[]) => void;
@@ -70,6 +71,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ selectedPaperIds: new Set(s.papers.filter((p) => p.status === "indexed").map((p) => p.id)) })),
   deselectAllPapers: () => set({ selectedPaperIds: new Set() }),
 
+  setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
   updateLastAssistantMessage: (content) =>
     set((s) => {

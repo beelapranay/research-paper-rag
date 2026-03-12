@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from backend.deps import get_current_user
+from backend.db_chat import init_chat_table, save_message, get_history, clear_history
 from rag.retriever import hybrid_retrieve
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -26,6 +27,7 @@ class ChatRequest(BaseModel):
 router = APIRouter()
 
 load_dotenv()
+init_chat_table()
 
 
 def _basename(path: str) -> str:
@@ -33,6 +35,36 @@ def _basename(path: str) -> str:
         return "unknown"
     return os.path.basename(path).replace("\\", "/").split("/")[-1]
 
+
+
+class SaveMessageRequest(BaseModel):
+    id: str
+    role: str
+    content: str
+    chunks: list = []
+
+
+@router.get("/history")
+async def chat_history(current_user=Depends(get_current_user)):
+    return get_history(current_user["id"])
+
+
+@router.delete("/history")
+async def delete_chat_history(current_user=Depends(get_current_user)):
+    clear_history(current_user["id"])
+    return {"cleared": True}
+
+
+@router.post("/save")
+async def save_chat_message(request: SaveMessageRequest, current_user=Depends(get_current_user)):
+    save_message(
+        msg_id=request.id,
+        user_id=current_user["id"],
+        role=request.role,
+        content=request.content,
+        chunks=request.chunks if request.chunks else None,
+    )
+    return {"saved": True}
 
 
 @router.post("")
