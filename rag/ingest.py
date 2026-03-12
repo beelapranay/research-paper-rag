@@ -31,9 +31,7 @@ def _clean_text(text: str) -> str:
     for src, dst in ligatures.items():
         text = text.replace(src, dst)
 
-    # Remove zero-width and non-printable characters
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    # Collapse runs of whitespace/newlines into a single space
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -83,7 +81,6 @@ def _strip_headers_footers(docs: list) -> None:
             if count >= threshold and len(line) < 120
         }
 
-        # Always remove pure page-number lines
         for i, lines in enumerate(page_lines):
             filtered = []
             for line in lines:
@@ -98,34 +95,14 @@ def _strip_headers_footers(docs: list) -> None:
             pages[i].page_content = "\n".join(filtered)
 
 
-def _is_name_line(line: str) -> bool:
-    if "@" in line:
-        return False
-    caps = re.findall(r"\b[A-Z][a-z]+\b", line)
-    return len(caps) >= 2 and len(line) <= 120
-
-
 def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]:
     lines = [ln.strip() for ln in first_page_text.splitlines() if ln.strip()]
     title = ""
-    authors = ""
     year = ""
 
     for line in lines:
         if 10 <= len(line) <= 200 and not line.lower().startswith("abstract"):
             title = line
-            break
-
-    for line in lines[1:8]:
-        if "abstract" in line.lower():
-            continue
-        if "@" in line:
-            continue
-        if "," in line or " and " in line:
-            authors = line
-            break
-        if _is_name_line(line):
-            authors = line
             break
 
     match = re.search(r"(19|20)\d{2}", first_page_text)
@@ -134,21 +111,21 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
 
     if not title:
         title = os.path.splitext(os.path.basename(filename))[0]
-    if not authors:
-        authors = "Unknown"
     if not year:
         year = "Unknown"
 
-    return {"title": title, "authors": authors, "year": year}
+    # We don't display authors; keep it equal to title for citation label consistency
+    return {"title": title, "authors": title, "year": year}
 
 
 def extract_pdf_metadata(file_path: str) -> dict[str, str]:
     loader = PDFPlumberLoader(file_path)
     docs = loader.load()
     if not docs:
+        base = os.path.splitext(os.path.basename(file_path))[0]
         return {
-            "title": os.path.splitext(os.path.basename(file_path))[0],
-            "authors": "Unknown",
+            "title": base,
+            "authors": base,
             "year": "Unknown",
         }
     return _extract_doc_metadata(docs[0].page_content or "", file_path)
@@ -158,6 +135,7 @@ def build_index(
     file_paths: list[str] | None = None,
     force_rebuild: bool = False,
     user_id: str | None = None,
+    paper_id: str | None = None,
 ) -> None:
     load_dotenv()
 
@@ -169,7 +147,6 @@ def build_index(
         print("No PDF files found. Add PDFs to ./data or pass file paths.")
         return
 
-    # Wipe existing DB to prevent duplicates on re-ingestion
     if os.path.isdir(CHROMA_DIR):
         if force_rebuild:
             shutil.rmtree(CHROMA_DIR)
@@ -200,7 +177,6 @@ def build_index(
                 print("All PDFs are already indexed. Pass force_rebuild=True to re-index.")
                 return
 
-    # 1. Load PDFs (one Document per page)
     docs = []
     for path in pdf_files:
         loader = PDFPlumberLoader(path)
@@ -212,21 +188,20 @@ def build_index(
             doc.metadata["source"] = filename
             if user_id:
                 doc.metadata["user_id"] = user_id
+            if paper_id:
+                doc.metadata["paper_id"] = paper_id
         docs.extend(file_docs)
 
-    # 2. Remove headers/footers, clean text
     _strip_headers_footers(docs)
     for doc in docs:
         doc.page_content = _clean_text(doc.page_content)
 
-    # Remove docs that are essentially empty after cleaning
     docs = [doc for doc in docs if len(doc.page_content) > 100]
 
     if not docs:
         print("No content found after cleaning. Check your PDFs.")
         return
 
-    # 3. Attach doc-level metadata (title/authors/year)
     first_page_by_source: dict[str, str] = {}
     for doc in docs:
         source = doc.metadata.get("source_path") or doc.metadata.get("source_file") or "unknown"
@@ -242,23 +217,22 @@ def build_index(
         source = doc.metadata.get("source_path") or doc.metadata.get("source_file") or "unknown"
         doc.metadata.update(meta_by_source.get(source, {}))
 
-    # 4. Split — larger chunks to preserve more context per embedding
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],  # Prefer paragraph > sentence > word breaks
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
     splits = text_splitter.split_documents(docs)
 
-    # Attach chunk index to metadata for debugging
     for i, split in enumerate(splits):
         split.metadata["chunk_index"] = i
+        source = split.metadata.get("source_file") or split.metadata.get("source") or "unknown"
+        split.metadata["chunk_id"] = f"{source}:{i}"
 
     print(f"Split into {len(splits)} chunks from {len(docs)} document(s).")
 
     embedding = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
-    # 5. Embed and store
     if os.path.isdir(CHROMA_DIR) and not force_rebuild:
         vectorstore = Chroma(
             persist_directory=CHROMA_DIR,

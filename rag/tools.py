@@ -88,6 +88,7 @@ def retrieve_info(query: str):
             "title": doc.metadata.get("title") if doc.metadata else None,
             "authors": doc.metadata.get("authors") if doc.metadata else None,
             "year": doc.metadata.get("year") if doc.metadata else None,
+            "chunk_id": doc.metadata.get("chunk_id") if doc.metadata else None,
         })
 
     return formatted_docs

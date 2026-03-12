@@ -40,7 +40,7 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0">
           <p className="text-xs font-medium text-foreground truncate">
-            {chunk.authors}
+            {chunk.title || basename(chunk.source)}
           </p>
           <p className="text-xs text-muted-foreground break-all">
             {basename(chunk.source)} · {chunk.year}

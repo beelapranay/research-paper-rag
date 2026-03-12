@@ -20,7 +20,7 @@ const MessageThread = () => {
             Ask about your papers
           </h2>
           <p className="text-muted-foreground text-sm max-w-md">
-            Upload research papers to the library, select which ones to query, and ask questions. Citations link directly to source evidence.
+            Upload research papers to the library, select which ones to query, and ask questions grounded in your sources.
           </p>
         </div>
       </div>

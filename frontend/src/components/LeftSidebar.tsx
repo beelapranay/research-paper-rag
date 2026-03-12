@@ -74,7 +74,6 @@ const LeftSidebar = () => {
         });
       });
 
-      // Poll status until no papers are still processing
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
       const poll = async () => {
         try {
@@ -132,7 +131,7 @@ const LeftSidebar = () => {
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-0.5">
+        <div className="px-3 py-2 space-y-1">
           {papers.map((paper) => (
             <PaperCard
               key={paper.id}

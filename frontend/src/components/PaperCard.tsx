@@ -18,7 +18,7 @@ const statusDot: Record<Paper["status"], string> = {
 
 const PaperCard = ({ paper, selected, onToggle, onDelete }: PaperCardProps) => {
   return (
-    <div className="group flex items-start gap-2.5 rounded-md px-2 py-2 hover:bg-accent/60 transition-colors">
+    <div className="group flex items-start gap-2.5 rounded-md px-3 py-2 w-full box-border hover:bg-accent/60 transition-colors">
       <Checkbox
         checked={selected}
         onCheckedChange={onToggle}
@@ -30,9 +30,6 @@ const PaperCard = ({ paper, selected, onToggle, onDelete }: PaperCardProps) => {
           <span className={cn("h-2 w-2 rounded-full shrink-0", statusDot[paper.status])} />
           <p className="text-sm font-medium truncate leading-tight">{paper.title}</p>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-          {paper.authors} · {paper.year}
-        </p>
       </div>
       <button
         onClick={(e) => {

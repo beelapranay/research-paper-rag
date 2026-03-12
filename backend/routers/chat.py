@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,6 +35,32 @@ def _basename(path: str) -> str:
     return os.path.basename(path).replace("\\", "/").split("/")[-1]
 
 
+def _looks_like_citation(text: str) -> bool:
+    if "Unknown" in text:
+        return True
+    return re.search(r"\b(19|20)\d{2}\b", text) is not None
+
+
+def _strip_citations_stream(text: str, state: dict) -> str:
+    output = []
+    for ch in text:
+        if not state["in_bracket"]:
+            if ch == "[":
+                state["in_bracket"] = True
+                state["buffer"] = "["
+            else:
+                output.append(ch)
+        else:
+            state["buffer"] += ch
+            if ch == "]":
+                buf = state["buffer"]
+                if not _looks_like_citation(buf):
+                    output.append(buf)
+                state["in_bracket"] = False
+                state["buffer"] = ""
+    return "".join(output)
+
+
 @router.post("")
 async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -43,28 +70,27 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
     llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
     def generate():
-        docs, meta_map = hybrid_retrieve(request.query)
+        docs, meta_map = hybrid_retrieve(request.query, user_id=current_user["id"], paper_ids=request.paper_ids)
 
         context_lines = []
         for doc in docs:
-            source = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
-            source = _basename(source)
-            authors = doc.metadata.get("authors") or "Unknown"
+            source_raw = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
+            source = _basename(source_raw)
+            title = doc.metadata.get("title") or source
             year = doc.metadata.get("year") or "Unknown"
-            key = (doc.page_content, str(doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"))
+            key = (doc.page_content, str(source_raw))
             meta = meta_map.get(key, {})
             score = meta.get("rerank_score") or meta.get("rrf_score")
             score_str = f"{score:.3f}" if isinstance(score, float) else "n/a"
-            label = f"[{authors}, {year}]"
+            label = f"[{title}, {year}]"
             context_lines.append(f"{label} (score: {score_str})\n{doc.page_content}")
 
         context_block = "\n\n".join(context_lines)
 
         system_prompt = (
             "You are a research assistant. Answer using ONLY the provided context. "
-            "For every claim you make, cite the source using this format: [Author et al., Year]. "
-            "If the context does not contain enough information, say so explicitly. "
-            "Do not fabricate citations or facts."
+            "Do not include citations or bracketed references in your response. "
+            "If the context does not contain enough information, say so explicitly."
         )
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -75,9 +101,16 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "content": f"Question: {request.query}\n\nContext:\n{context_block}",
         })
 
+        strip_state = {"in_bracket": False, "buffer": ""}
+
         for chunk in llm.stream(messages):
             if chunk.content:
-                yield f"event: token\ndata: {chunk.content}\n\n"
+                cleaned = _strip_citations_stream(chunk.content, strip_state)
+                if cleaned:
+                    yield f"event: token\ndata: {cleaned}\n\n"
+
+        if strip_state["buffer"]:
+            yield f"event: token\ndata: {strip_state['buffer']}\n\n"
 
         chunks = []
         for doc in docs:
@@ -86,8 +119,9 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             key = (doc.page_content, str(raw_source))
             meta = meta_map.get(key, {})
             chunks.append({
+                "id": doc.metadata.get("chunk_id"),
                 "content": doc.page_content,
-                "title": doc.metadata.get("title"),
+                "title": doc.metadata.get("title") or source,
                 "authors": doc.metadata.get("authors"),
                 "year": doc.metadata.get("year"),
                 "source_file": source,
@@ -98,7 +132,6 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             })
 
         metadata = {
-            "citations": [],
             "chunks": chunks,
         }
 

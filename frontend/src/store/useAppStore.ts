@@ -21,7 +21,7 @@ interface AppState {
   // Chat actions
   addMessage: (message: Message) => void;
   updateLastAssistantMessage: (content: string) => void;
-  finalizeAssistantMessage: (citations: Message["citations"], chunks: RetrievedChunk[]) => void;
+  finalizeAssistantMessage: (chunks: RetrievedChunk[]) => void;
   clearChat: () => void;
   setIsStreaming: (v: boolean) => void;
 
@@ -72,12 +72,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, content };
       return { messages: msgs };
     }),
-  finalizeAssistantMessage: (citations, chunks) =>
+  finalizeAssistantMessage: (chunks) =>
     set((s) => {
       const msgs = [...s.messages];
       if (msgs.length === 0) return { messages: msgs, activeChunks: chunks, isStreaming: false };
       const last = msgs[msgs.length - 1];
-      if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, citations, chunks, isStreaming: false };
+      if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, chunks, isStreaming: false };
       return { messages: msgs, activeChunks: chunks, isStreaming: false };
     }),
   clearChat: () => set({ messages: [], activeChunks: [], highlightedChunkId: null }),

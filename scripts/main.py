@@ -1,19 +1,16 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import re
 from langchain_google_genai import ChatGoogleGenerativeAI
 from rag.tools import retrieve_info
-import os
-import re
-from rag.output_parser import parse_response
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
 
 system_prompt = (
     "You are a research assistant. Answer using ONLY the provided context. "
-    "For every claim you make, cite the source using this format: [Author et al., Year]. "
-    "If the context does not contain enough information, say so explicitly. "
-    "Do not fabricate citations or facts."
+    "Do not include citations or bracketed references in your response. "
+    "If the context does not contain enough information, say so explicitly."
 )
 
 FOLLOW_UP_HINTS = {
@@ -44,6 +41,32 @@ def is_ingestion_topic(text: str) -> bool:
     normalized = text.strip().lower()
     keywords = ("ingest", "indexed", "index", "source", "url", "loaded")
     return any(keyword in normalized for keyword in keywords)
+
+
+def _looks_like_citation(text: str) -> bool:
+    if "Unknown" in text:
+        return True
+    return re.search(r"\b(19|20)\d{2}\b", text) is not None
+
+
+def _strip_citations_stream(text: str, state: dict) -> str:
+    output = []
+    for ch in text:
+        if not state["in_bracket"]:
+            if ch == "[":
+                state["in_bracket"] = True
+                state["buffer"] = "["
+            else:
+                output.append(ch)
+        else:
+            state["buffer"] += ch
+            if ch == "]":
+                buf = state["buffer"]
+                if not _looks_like_citation(buf):
+                    output.append(buf)
+                state["in_bracket"] = False
+                state["buffer"] = ""
+    return "".join(output)
 
 
 print("--- Gemini RAG CLI Ready ---")
@@ -96,52 +119,16 @@ while True:
         print("No relevant context found in your documents.")
         continue
 
-    def _citation_label(authors: str | None, year: str | None, fallback_source: str) -> str:
-        author_label = "Unknown"
-        if authors and authors.strip() and authors.strip().lower() != "unknown":
-            if "," in authors:
-                author_label = authors.split(",", 1)[0].strip()
-            elif " and " in authors:
-                author_label = authors.split(" and ", 1)[0].strip()
-            else:
-                author_label = authors.strip()
-            if (" and " in authors) or ("," in authors):
-                author_label = f"{author_label} et al."
-
-        year_label = year if year and year.strip() else "Unknown"
-        if author_label == "Unknown":
-            base = os.path.splitext(os.path.basename(fallback_source))[0] if fallback_source else "Unknown"
-            author_label = base or "Unknown"
-
-        return f"[{author_label}, {year_label}]"
-
     def _format_context(chunks: list[dict]) -> str:
         lines = []
         for chunk in chunks:
-            label = _citation_label(
-                authors=chunk.get("authors"),
-                year=chunk.get("year"),
-                fallback_source=chunk.get("source") or "unknown",
-            )
+            title = chunk.get("title") or chunk.get("source") or "Unknown"
+            year = chunk.get("year") or "Unknown"
             score = chunk.get("score")
             score_str = f"{score:.2f}" if isinstance(score, float) else "n/a"
             content = chunk.get("content", "")
-            lines.append(f"{label} (score: {score_str})\n{content}")
+            lines.append(f"[{title}, {year}] (score: {score_str})\n{content}")
         return "\n\n".join(lines)
-
-    def _citations_valid(answer: str) -> bool:
-        sentences = re.split(r"(?<=[.!?])\s+", answer.strip())
-        if not sentences:
-            return False
-        pattern = re.compile(r"\[[^\]]+?,\s*\d{4}\]")
-        for sent in sentences:
-            if not sent.strip():
-                continue
-            if not any(ch.isalnum() for ch in sent):
-                continue
-            if not pattern.search(sent):
-                return False
-        return True
 
     formatted_context = _format_context(context)
 
@@ -158,59 +145,20 @@ while True:
 
     print("\nAssistant: ", end="", flush=True)
     full_response = ""
+    strip_state = {"in_bracket": False, "buffer": ""}
 
     for chunk in llm.stream(messages):
         if chunk.content:
-            print(chunk.content, end="", flush=True)
-            full_response += chunk.content
+            cleaned = _strip_citations_stream(chunk.content, strip_state)
+            if cleaned:
+                print(cleaned, end="", flush=True)
+                full_response += cleaned
+
+    if strip_state["buffer"]:
+        print(strip_state["buffer"], end="", flush=True)
+        full_response += strip_state["buffer"]
 
     print()
-
-    if not _citations_valid(full_response):
-        reprompt = {
-            "role": "user",
-            "content": (
-                "You must cite sources for every sentence using [Author et al., Year]. "
-                "Re-answer the question using ONLY the provided context."
-            ),
-        }
-        messages_retry = [
-            {"role": "system", "content": system_prompt},
-            *chat_history,
-            user_message,
-            reprompt,
-        ]
-        print("Assistant: ", end="", flush=True)
-        full_response = ""
-        for chunk in llm.stream(messages_retry):
-            if chunk.content:
-                print(chunk.content, end="", flush=True)
-                full_response += chunk.content
-        print()
-
-    rag_response, citations_ok = parse_response(full_response, context)
-    if not citations_ok:
-        reprompt = {
-            "role": "user",
-            "content": (
-                "Some citations do not match the provided context. "
-                "Re-answer using ONLY citations that appear in the context block."
-            ),
-        }
-        messages_retry = [
-            {"role": "system", "content": system_prompt},
-            *chat_history,
-            user_message,
-            reprompt,
-        ]
-        print("Assistant: ", end="", flush=True)
-        full_response = ""
-        for chunk in llm.stream(messages_retry):
-            if chunk.content:
-                print(chunk.content, end="", flush=True)
-                full_response += chunk.content
-        print()
-        rag_response, citations_ok = parse_response(full_response, context)
 
     chat_history.append(user_message)
     chat_history.append({"role": "assistant", "content": full_response})

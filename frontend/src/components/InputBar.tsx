@@ -46,7 +46,6 @@ const InputBar = () => {
     const decoder = new TextDecoder();
     let buffer = "";
     let assistantText = "";
-    let finalCitations: any[] = [];
     let finalChunks: any[] = [];
 
     while (true) {
@@ -70,12 +69,12 @@ const InputBar = () => {
           const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (dataLine) {
             const payload = JSON.parse(dataLine.replace("data: ", ""));
-            finalCitations = payload.citations || [];
             finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
               id: c.id || `chunk_${i}`,
               content: c.content,
               source: c.source_file,
-              authors: c.authors || "Unknown",
+              title: c.title,
+              authors: c.authors || "",
               year: c.year || 0,
               bm25Rank: c.bm25_rank || 0,
               vectorRank: c.vector_rank || 0,
@@ -87,7 +86,7 @@ const InputBar = () => {
       }
     }
 
-    finalizeAssistantMessage(finalCitations, finalChunks);
+    finalizeAssistantMessage(finalChunks);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

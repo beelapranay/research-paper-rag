@@ -1,6 +1,5 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import CitationChip from "./CitationChip";
 import type { Message } from "@/types";
 
 interface AssistantMessageProps {
@@ -21,13 +20,6 @@ const AssistantMessage = ({ message }: AssistantMessageProps) => {
             <span className="inline-block w-2 h-4 bg-primary/60 animate-pulse-soft ml-0.5" />
           )}
         </div>
-        {message.citations && message.citations.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-1">
-            {message.citations.map((citation, i) => (
-              <CitationChip key={i} citation={citation} />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

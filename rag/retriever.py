@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Tuple, Optional
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
@@ -54,21 +54,51 @@ def _rrf_merge(
     return merged_docs, scores
 
 
-def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], dict]]:
-    if not os.path.isdir(CHROMA_DIR):
-        raise FileNotFoundError("Chroma DB not found. Run ingestion first.")
+def _build_where(user_id: Optional[str], paper_ids: Optional[list[str]]):
+    filters = []
+    if user_id:
+        filters.append({"user_id": str(user_id)})
+    if paper_ids:
+        filters.append({"paper_id": {"$in": [str(pid) for pid in paper_ids]}})
 
-    vectorstore = _load_vectorstore()
-    bm25_docs = bm25_search(query, k=K_BM25)
-    vector_docs = vectorstore.max_marginal_relevance_search(
+    if not filters:
+        return None
+    if len(filters) == 1:
+        return filters[0]
+    return {"$and": filters}
+
+
+def _retrieve_vector(vectorstore: Chroma, query: str, where):
+    return vectorstore.max_marginal_relevance_search(
         query,
         k=K_VECTOR,
         fetch_k=FETCH_K_VECTOR,
         lambda_mult=MMR_LAMBDA,
+        filter=where,
     )
 
-    bm25_rank = { _doc_key(doc): i + 1 for i, doc in enumerate(bm25_docs) }
-    vector_rank = { _doc_key(doc): i + 1 for i, doc in enumerate(vector_docs) }
+
+def hybrid_retrieve(
+    query: str,
+    user_id: Optional[str] = None,
+    paper_ids: Optional[list[str]] = None,
+) -> Tuple[List[Document], Dict[tuple[str, str], dict]]:
+    if not os.path.isdir(CHROMA_DIR):
+        raise FileNotFoundError("Chroma DB not found. Run ingestion first.")
+
+    vectorstore = _load_vectorstore()
+    where = _build_where(user_id, paper_ids)
+
+    bm25_docs = bm25_search(query, k=K_BM25, user_id=user_id, paper_ids=paper_ids)
+    vector_docs = _retrieve_vector(vectorstore, query, where)
+
+    # Fallback: if filters are set but yield nothing, retry without filters (script ingest lacks IDs)
+    if where and not bm25_docs and not vector_docs:
+        bm25_docs = bm25_search(query, k=K_BM25)
+        vector_docs = _retrieve_vector(vectorstore, query, None)
+
+    bm25_rank = {_doc_key(doc): i + 1 for i, doc in enumerate(bm25_docs)}
+    vector_rank = {_doc_key(doc): i + 1 for i, doc in enumerate(vector_docs)}
 
     merged_docs, rrf_scores = _rrf_merge([bm25_docs, vector_docs], rrf_k=RRF_K)
     merged_docs = merged_docs[:MERGED_K]
@@ -90,7 +120,6 @@ def hybrid_retrieve(query: str) -> Tuple[List[Document], Dict[tuple[str, str], d
             "rerank_score": 0.0,
         }
 
-    # Apply rerank scores if available
     for idx, score in rerank_scores.items():
         if 0 <= idx < len(merged_docs):
             key = _doc_key(merged_docs[idx])

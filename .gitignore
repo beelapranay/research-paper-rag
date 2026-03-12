@@ -31,10 +31,8 @@ bm25_chunks.pkl
 # Logs
 *.log
 
-plan_md.md
-ui_plan.md
-integration_plan.md
-changes.md
+*.md
+!README.md
 data/*
 
 # Backend runtime artifacts
