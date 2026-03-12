@@ -10,9 +10,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 
+from rag.bm25_index import invalidate_bm25_cache
+from rag.retriever import invalidate_vectorstore_cache
 
-CHROMA_DIR = "./chroma_db"
-DATA_DIR = "./data"
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_DIR = os.path.join(_PROJECT_ROOT, "chroma_db")
+DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 300
 
@@ -95,15 +99,43 @@ def _strip_headers_footers(docs: list) -> None:
             pages[i].page_content = "\n".join(filtered)
 
 
+def _looks_like_author_line(line: str) -> bool:
+    if len(line) < 3 or len(line) > 300:
+        return False
+    skip_starts = ("abstract", "introduction", "keywords", "doi", "http", "arxiv", "©")
+    if line.lower().startswith(skip_starts):
+        return False
+    # Heuristic: author lines typically contain commas or "and", with mostly
+    # capitalized words and few digits (unlike titles which are longer phrases).
+    has_separator = "," in line or " and " in line.lower()
+    digit_ratio = sum(c.isdigit() for c in line) / max(len(line), 1)
+    cap_words = sum(1 for w in line.split() if w[0:1].isupper())
+    if has_separator and digit_ratio < 0.15 and cap_words >= 2:
+        return True
+    return False
+
+
 def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]:
     lines = [ln.strip() for ln in first_page_text.splitlines() if ln.strip()]
     title = ""
+    authors = ""
     year = ""
 
-    for line in lines:
+    title_idx = -1
+    for i, line in enumerate(lines):
         if 10 <= len(line) <= 200 and not line.lower().startswith("abstract"):
             title = line
+            title_idx = i
             break
+
+    # Look for author-like lines immediately after the title
+    if title_idx >= 0:
+        for line in lines[title_idx + 1 : title_idx + 5]:
+            if line.lower().startswith("abstract"):
+                break
+            if _looks_like_author_line(line):
+                authors = line
+                break
 
     match = re.search(r"(19|20)\d{2}", first_page_text)
     if match:
@@ -111,11 +143,12 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
 
     if not title:
         title = os.path.splitext(os.path.basename(filename))[0]
+    if not authors:
+        authors = "Unknown"
     if not year:
         year = "Unknown"
 
-    # We don't display authors; keep it equal to title for citation label consistency
-    return {"title": title, "authors": title, "year": year}
+    return {"title": title, "authors": authors, "year": year}
 
 
 def extract_pdf_metadata(file_path: str) -> dict[str, str]:
@@ -125,7 +158,7 @@ def extract_pdf_metadata(file_path: str) -> dict[str, str]:
         base = os.path.splitext(os.path.basename(file_path))[0]
         return {
             "title": base,
-            "authors": base,
+            "authors": "Unknown",
             "year": "Unknown",
         }
     return _extract_doc_metadata(docs[0].page_content or "", file_path)
@@ -239,12 +272,15 @@ def build_index(
             embedding_function=embedding,
         )
         vectorstore.add_documents(splits)
-        vectorstore.persist()
     else:
         vectorstore = Chroma.from_documents(
             documents=splits,
             embedding=embedding,
             persist_directory=CHROMA_DIR,
         )
+
+    # Invalidate caches so subsequent queries see the new data
+    invalidate_bm25_cache()
+    invalidate_vectorstore_cache()
 
     print(f"Indexing complete! {vectorstore._collection.count()} chunks stored.")

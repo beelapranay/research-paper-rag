@@ -1,6 +1,8 @@
 # bm25_index.py
 import os
 import pickle
+import re
+import threading
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -10,13 +12,35 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from rank_bm25 import BM25Okapi
 
 
-CHROMA_DIR = "./chroma_db"
-BM25_INDEX_PATH = "./bm25.pkl"
-BM25_CHUNKS_PATH = "./bm25_chunks.pkl"
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_DIR = os.path.join(_PROJECT_ROOT, "chroma_db")
+BM25_INDEX_PATH = os.path.join(_PROJECT_ROOT, "bm25.pkl")
+BM25_CHUNKS_PATH = os.path.join(_PROJECT_ROOT, "bm25_chunks.pkl")
+
+STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "it", "as", "be", "was", "are",
+    "were", "been", "being", "have", "has", "had", "do", "does", "did",
+    "will", "would", "could", "should", "may", "might", "shall", "can",
+    "this", "that", "these", "those", "not", "no", "nor", "so", "if",
+    "then", "than", "too", "very", "just", "about", "above", "after",
+    "again", "all", "also", "am", "any", "because", "before", "between",
+    "both", "each", "few", "more", "most", "other", "our", "out", "own",
+    "same", "some", "such", "up", "only", "into", "over", "under", "which",
+    "while", "who", "whom", "what", "when", "where", "why", "how",
+})
+
+_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
+
+# In-memory cache
+_cache_lock = threading.Lock()
+_cached_bm25: Optional[BM25Okapi] = None
+_cached_chunks: Optional[List[Document]] = None
 
 
 def _tokenize(text: str) -> list[str]:
-    return text.lower().split()
+    text = _PUNCT_RE.sub(" ", text.lower())
+    return [tok for tok in text.split() if tok not in STOPWORDS and len(tok) > 1]
 
 
 def _load_all_chunks() -> list[Document]:
@@ -63,15 +87,35 @@ def build_bm25_index(force_rebuild: bool = False) -> None:
 
 
 def _load_bm25() -> tuple[BM25Okapi, list[Document]]:
+    global _cached_bm25, _cached_chunks
+
+    with _cache_lock:
+        if _cached_bm25 is not None and _cached_chunks is not None:
+            return _cached_bm25, _cached_chunks
+
     if not os.path.isfile(BM25_INDEX_PATH) or not os.path.isfile(BM25_CHUNKS_PATH):
-        build_bm25_index(force_rebuild=False)
+        build_bm25_index(force_rebuild=True)
 
     with open(BM25_INDEX_PATH, "rb") as f:
         bm25 = pickle.load(f)
     with open(BM25_CHUNKS_PATH, "rb") as f:
         chunks = pickle.load(f)
 
+    with _cache_lock:
+        _cached_bm25 = bm25
+        _cached_chunks = chunks
+
     return bm25, chunks
+
+
+def invalidate_bm25_cache() -> None:
+    global _cached_bm25, _cached_chunks
+    with _cache_lock:
+        _cached_bm25 = None
+        _cached_chunks = None
+    for path in (BM25_INDEX_PATH, BM25_CHUNKS_PATH):
+        if os.path.isfile(path):
+            os.remove(path)
 
 
 def _match_doc(doc: Document, user_id: Optional[str], paper_ids: Optional[list[str]]) -> bool:

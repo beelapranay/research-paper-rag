@@ -1,43 +1,24 @@
 # tools.py
 import os
-from dotenv import load_dotenv
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
+from dotenv import load_dotenv
 from langchain_core.tools import tool
 
-from rag.retriever import hybrid_retrieve
+from rag.retriever import hybrid_retrieve, _load_vectorstore, CHROMA_DIR
 
 load_dotenv()
 
 
-def _build_index_if_needed() -> None:
-    from rag.ingest import build_index
-    build_index()
+def _ensure_index() -> None:
+    if not os.path.isdir(CHROMA_DIR):
+        from rag.ingest import build_index
+        build_index()
+        return
 
-
-def _load_vectorstore() -> Chroma:
-    embedding_fn = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-
-    if not os.path.isdir("./chroma_db"):
-        _build_index_if_needed()
-
-    store = Chroma(
-        persist_directory="./chroma_db",
-        embedding_function=embedding_fn,
-    )
-
+    store = _load_vectorstore()
     if store._collection.count() == 0:
-        _build_index_if_needed()
-        store = Chroma(
-            persist_directory="./chroma_db",
-            embedding_function=embedding_fn,
-        )
-
-    return store
-
-
-vectorstore = _load_vectorstore()
+        from rag.ingest import build_index
+        build_index()
 
 
 def _is_ingestion_question(query: str) -> bool:
@@ -47,7 +28,8 @@ def _is_ingestion_question(query: str) -> bool:
 
 
 def _format_sources() -> str:
-    rows = vectorstore.get(include=["metadatas"])
+    store = _load_vectorstore()
+    rows = store.get(include=["metadatas"])
     metadatas = rows.get("metadatas", []) if isinstance(rows, dict) else []
 
     sources = []
@@ -66,7 +48,14 @@ def _format_sources() -> str:
 
 @tool
 def retrieve_info(query: str):
-    """Searches the knowledge base for relevant information."""
+    """Searches the research paper knowledge base for relevant information.
+
+    Use this tool to find specific claims, data, methods, or findings from
+    ingested research papers. Returns ranked document chunks with relevance
+    scores, source file, title, authors, and year metadata.
+    """
+    _ensure_index()
+
     if _is_ingestion_question(query):
         return _format_sources()
 

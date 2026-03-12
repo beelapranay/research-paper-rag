@@ -10,6 +10,8 @@ from langchain_core.documents import Document
 COHERE_MODEL = "rerank-english-v3.0"
 LOCAL_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+_cross_encoder = None
+
 
 def _rerank_with_cohere(query: str, docs: List[Document], top_n: int) -> Tuple[List[Document], List[int], Dict[int, float]]:
     import cohere  # lazy import
@@ -34,10 +36,16 @@ def _rerank_with_cohere(query: str, docs: List[Document], top_n: int) -> Tuple[L
     return ranked_docs, ranked_indices, score_map
 
 
-def _rerank_with_local(query: str, docs: List[Document], top_n: int) -> Tuple[List[Document], List[int], Dict[int, float]]:
-    from sentence_transformers import CrossEncoder  # lazy import
+def _get_cross_encoder():
+    global _cross_encoder
+    if _cross_encoder is None:
+        from sentence_transformers import CrossEncoder
+        _cross_encoder = CrossEncoder(LOCAL_MODEL)
+    return _cross_encoder
 
-    model = CrossEncoder(LOCAL_MODEL)
+
+def _rerank_with_local(query: str, docs: List[Document], top_n: int) -> Tuple[List[Document], List[int], Dict[int, float]]:
+    model = _get_cross_encoder()
     pairs = [(query, doc.page_content) for doc in docs]
     scores = model.predict(pairs)
 

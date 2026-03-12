@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from typing import Dict, Iterable, List, Tuple, Optional
 
 from langchain_chroma import Chroma
@@ -12,7 +13,8 @@ from rag.bm25_index import bm25_search
 from rag.reranker import rerank_documents
 
 
-CHROMA_DIR = "./chroma_db"
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_DIR = os.path.join(_PROJECT_ROOT, "chroma_db")
 
 # Retrieval settings
 K_BM25 = 20
@@ -22,13 +24,29 @@ MMR_LAMBDA = 0.5
 RRF_K = 60
 MERGED_K = 40
 
+_vs_lock = threading.Lock()
+_cached_vectorstore: Optional[Chroma] = None
+
 
 def _load_vectorstore() -> Chroma:
+    global _cached_vectorstore
+    with _vs_lock:
+        if _cached_vectorstore is not None:
+            return _cached_vectorstore
     embedding_fn = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-    return Chroma(
+    store = Chroma(
         persist_directory=CHROMA_DIR,
         embedding_function=embedding_fn,
     )
+    with _vs_lock:
+        _cached_vectorstore = store
+    return store
+
+
+def invalidate_vectorstore_cache() -> None:
+    global _cached_vectorstore
+    with _vs_lock:
+        _cached_vectorstore = None
 
 
 def _doc_key(doc: Document) -> tuple[str, str]:
