@@ -52,7 +52,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { papers: s.papers.filter((p) => p.id !== id), selectedPaperIds: next };
     }),
   updatePaperStatus: (id, status) =>
-    set((s) => ({ papers: s.papers.map((p) => (p.id === id ? { ...p, status } : p)) })),
+    set((s) => {
+      const next = new Set(s.selectedPaperIds);
+      if (status === "indexed") next.add(id);
+      return {
+        papers: s.papers.map((p) => (p.id === id ? { ...p, status } : p)),
+        selectedPaperIds: next,
+      };
+    }),
   togglePaperSelection: (id) =>
     set((s) => {
       const next = new Set(s.selectedPaperIds);

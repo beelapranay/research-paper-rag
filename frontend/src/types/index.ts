@@ -1,4 +1,4 @@
-export type PaperStatus = "indexed" | "indexing" | "failed";
+export type PaperStatus = "indexed" | "indexing" | "processing" | "failed";
 
 export interface Paper {
   id: string;
