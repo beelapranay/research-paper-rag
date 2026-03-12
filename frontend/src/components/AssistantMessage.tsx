@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import type { Components } from "react-markdown";
 import type { Message, RetrievedChunk } from "@/types";
 import { useAppStore } from "@/store/useAppStore";
@@ -10,7 +11,6 @@ interface AssistantMessageProps {
 }
 
 const CITE_RE = /\[(\d+)\]/g;
-const PLACEHOLDER_RE = /%%CITE_(\d+)%%/g;
 
 const stripUuidPrefix = (name: string) =>
   name.replace(
@@ -18,9 +18,13 @@ const stripUuidPrefix = (name: string) =>
     "",
   );
 
-/** Replace [1], [2] etc. with placeholders so ReactMarkdown won't parse them as link refs. */
-function escapeCitations(markdown: string): string {
-  return markdown.replace(CITE_RE, (_match, num) => `%%CITE_${num}%%`);
+/**
+ * Replace [1], [2] etc. with inline HTML <cite> tags.
+ * rehype-raw passes these through to React, where we handle them
+ * via a custom `cite` component — no tree walking needed.
+ */
+function insertCiteHtml(markdown: string): string {
+  return markdown.replace(CITE_RE, (_match, num) => `<cite data-num="${num}"></cite>`);
 }
 
 const CitationBadge = ({
@@ -57,91 +61,34 @@ const CitationBadge = ({
   );
 };
 
-/** Replace %%CITE_N%% placeholders in rendered text nodes with CitationBadge components. */
-function injectCitations(
-  text: string,
-  chunks?: RetrievedChunk[]
-): (string | JSX.Element)[] {
-  const result: (string | JSX.Element)[] = [];
-  let lastIndex = 0;
-
-  for (const match of text.matchAll(PLACEHOLDER_RE)) {
-    const start = match.index!;
-    if (start > lastIndex) {
-      result.push(text.slice(lastIndex, start));
-    }
-    const num = parseInt(match[1], 10);
-    const chunk =
-      chunks && num >= 1 && num <= chunks.length
-        ? chunks[num - 1]
-        : undefined;
-    result.push(
-      <CitationBadge key={`cite-${start}-${num}`} num={num} chunk={chunk} />
-    );
-    lastIndex = start + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    result.push(text.slice(lastIndex));
-  }
-  return result;
-}
-
-function processNode(
-  node: React.ReactNode,
-  chunks?: RetrievedChunk[]
-): React.ReactNode {
-  if (!node) return node;
-
-  // String leaf — swap placeholders for CitationBadge components
-  if (typeof node === "string") {
-    // Use .includes() instead of regex.test() to avoid stateful lastIndex bug with /g flag
-    if (node.includes("%%CITE_")) {
-      return injectCitations(node, chunks);
-    }
-    return node;
-  }
-
-  // Array — recurse into each element
-  if (Array.isArray(node)) {
-    return node.flatMap((child) => {
-      const result = processNode(child, chunks);
-      return Array.isArray(result) ? result : [result];
-    });
-  }
-
-  // React element — clone with recursively processed children
-  if (typeof node === "object" && "props" in node) {
-    const { children, ...restProps } = (node as React.ReactElement).props;
-    if (children) {
-      return { ...node, props: { ...restProps, children: processNode(children, chunks) } };
-    }
-  }
-
-  return node;
-}
-
 const AssistantMessage = ({ message }: AssistantMessageProps) => {
   const chunks = message.chunks;
 
-  const escapedContent = useMemo(
-    () => escapeCitations(message.content),
+  const processedContent = useMemo(
+    () => insertCiteHtml(message.content),
     [message.content]
   );
 
   const components: Components = useMemo(
     () => ({
+      // Handle <cite data-num="N"> tags inserted by insertCiteHtml
+      cite: ({ node, ...props }: any) => {
+        const num = parseInt(props["data-num"], 10);
+        if (isNaN(num)) return <cite {...props} />;
+        const chunk =
+          chunks && num >= 1 && num <= chunks.length
+            ? chunks[num - 1]
+            : undefined;
+        return <CitationBadge num={num} chunk={chunk} />;
+      },
       p: ({ children }) => (
-        <p className="mb-3 last:mb-0 leading-relaxed">
-          {processNode(children, chunks)}
-        </p>
+        <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>
       ),
       li: ({ children }) => (
-        <li className="leading-relaxed">
-          {processNode(children, chunks)}
-        </li>
+        <li className="leading-relaxed">{children}</li>
       ),
       td: ({ children }) => (
-        <td className="px-2 py-1">{processNode(children, chunks)}</td>
+        <td className="px-2 py-1">{children}</td>
       ),
       h1: ({ children }) => (
         <h1 className="text-lg font-display font-semibold mt-4 mb-2">
@@ -208,8 +155,12 @@ const AssistantMessage = ({ message }: AssistantMessageProps) => {
       <div className="max-w-[85%] space-y-2">
         <div className="rounded-xl rounded-tl-sm bg-card border border-border px-4 py-3 shadow-sm">
           <div className="text-sm text-foreground font-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-              {escapedContent}
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeRaw]}
+              components={components}
+            >
+              {processedContent}
             </ReactMarkdown>
           </div>
           {message.isStreaming && (
