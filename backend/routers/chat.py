@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,7 +34,9 @@ init_chat_table()
 def _basename(path: str) -> str:
     if not path:
         return "unknown"
-    return os.path.basename(path).replace("\\", "/").split("/")[-1]
+    name = os.path.basename(path).replace("\\", "/").split("/")[-1]
+    # Strip UUID prefix added by save_uploads (e.g. "ab12cd34-...-ef56_paper.pdf" -> "paper.pdf")
+    return re.sub(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_", "", name)
 
 
 

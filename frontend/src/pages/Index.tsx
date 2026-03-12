@@ -117,7 +117,7 @@ const Index = () => {
 
   return (
     <div className="flex h-screen bg-background">
-      <aside className="w-[280px] border-r border-border bg-sidebar shrink-0">
+      <aside className="w-[280px] border-r border-border bg-sidebar shrink-0 overflow-hidden">
         <LeftSidebar />
       </aside>
 
@@ -125,7 +125,7 @@ const Index = () => {
         <ChatPanel />
       </main>
 
-      <aside className="w-[320px] border-l border-border bg-sidebar shrink-0">
+      <aside className="w-[320px] border-l border-border bg-sidebar shrink-0 overflow-hidden">
         <RightSidebar />
       </aside>
     </div>

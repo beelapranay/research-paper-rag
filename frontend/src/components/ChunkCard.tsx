@@ -15,7 +15,12 @@ const getScoreColor = (score: number) => {
 
 const basename = (source: string) => {
   if (!source) return "unknown";
-  return source.replace("\\", "/").split("/").pop() || source;
+  const name = source.replace("\\", "/").split("/").pop() || source;
+  // Strip UUID prefix if present (e.g. "ab12cd34-...-ef56_paper.pdf" -> "paper.pdf")
+  return name.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
+    "",
+  );
 };
 
 const ChunkCard = ({ chunk }: ChunkCardProps) => {
@@ -37,20 +42,22 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
           : "border-border bg-card hover:border-border/80"
       )}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-foreground truncate">
             {chunk.title || basename(chunk.source)}
           </p>
-          <p className="text-xs text-muted-foreground break-all">
-            {basename(chunk.source)} · {chunk.year}
+          <p className="text-xs text-muted-foreground truncate">
+            {basename(chunk.source)}
+            {chunk.year && chunk.year > 0 ? ` · ${chunk.year}` : ""}
+            {chunk.authors && chunk.authors !== "Unknown" ? ` · ${chunk.authors}` : ""}
           </p>
         </div>
         <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full shrink-0", getScoreColor(chunk.rerankScore))}>
           {chunk.rerankScore.toFixed(2)}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground break-words">
+      <p className="text-xs leading-relaxed text-muted-foreground break-all">
         {truncatedContent}
         {chunk.content.length > 180 && (
           <button

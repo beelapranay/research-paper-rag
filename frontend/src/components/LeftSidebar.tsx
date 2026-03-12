@@ -54,7 +54,10 @@ const LeftSidebar = () => {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast({ title: "Upload failed", description: err.detail || "Try again." });
+        toast({
+          title: res.status === 409 ? "Duplicate paper" : "Upload failed",
+          description: err.detail || "Try again.",
+        });
         return;
       }
 

@@ -44,10 +44,37 @@ def upload_papers(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded.")
 
-    saved_paths = save_uploads(files)
+    # Check for duplicates by source_file name for this user
+    with db.get_conn() as conn:
+        cur = conn.execute(
+            "SELECT source_file FROM papers WHERE user_id = ?",
+            (current_user["id"],),
+        )
+        existing_files = {row["source_file"] for row in cur.fetchall()}
+
+    new_files = []
+    skipped = []
+    for file in files:
+        if file.filename in existing_files:
+            skipped.append(file.filename)
+        else:
+            new_files.append(file)
+            existing_files.add(file.filename)  # prevent dupes within same batch
+
+    if skipped:
+        # Still allow new files through, just skip duplicates
+        pass
+
+    if not new_files:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Already uploaded: {', '.join(skipped)}",
+        )
+
+    saved_paths = save_uploads(new_files)
     results = []
 
-    for path, file in zip(saved_paths, files):
+    for path, file in zip(saved_paths, new_files):
         paper_id = str(uuid.uuid4())
         meta = get_metadata(path)
 

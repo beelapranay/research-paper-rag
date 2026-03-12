@@ -22,7 +22,7 @@ CHUNK_OVERLAP = 300
 
 
 def _clean_text(text: str) -> str:
-    """Normalize whitespace, fix ligatures, and remove non-printables."""
+    """Normalize whitespace, fix ligatures, remove non-printables, and fix missing spaces."""
     ligatures = {
         "ﬁ": "fi",
         "ﬂ": "fl",
@@ -36,6 +36,13 @@ def _clean_text(text: str) -> str:
         text = text.replace(src, dst)
 
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    # Insert space between a lowercase letter and an uppercase letter (camelCase joins
+    # from PDF extraction, e.g. "rewardstates" won't match but "rewardStates" will).
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    # Insert space between a letter/closing-paren and an opening paren: "word(x)" -> "word (x)"
+    text = re.sub(r"([a-zA-Z)])(\()", r"\1 \2", text)
+    # Insert space between a closing paren and a letter: "(x)word" -> "(x) word"
+    text = re.sub(r"(\))([a-zA-Z])", r"\1 \2", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -214,7 +221,9 @@ def build_index(
     for path in pdf_files:
         loader = PDFPlumberLoader(path)
         file_docs = loader.load()
-        filename = os.path.basename(path)
+        # Strip UUID prefix added by save_uploads (e.g. "ab12cd34_paper.pdf" -> "paper.pdf")
+        raw_name = os.path.basename(path)
+        filename = re.sub(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_", "", raw_name)
         for doc in file_docs:
             doc.metadata["source_file"] = filename
             doc.metadata["source_path"] = os.path.abspath(path)
@@ -260,8 +269,10 @@ def build_index(
     for i, split in enumerate(splits):
         split.metadata["chunk_index"] = i
         source = split.metadata.get("source_file") or split.metadata.get("source") or "unknown"
+        # Use short paper_id prefix (first 8 chars) for readability
         pid = split.metadata.get("paper_id") or "noid"
-        split.metadata["chunk_id"] = f"{pid}:{source}:{i}"
+        short_pid = pid[:8] if len(pid) > 8 else pid
+        split.metadata["chunk_id"] = f"{short_pid}:{source}:{i}"
 
     print(f"Split into {len(splits)} chunks from {len(docs)} document(s).")
 

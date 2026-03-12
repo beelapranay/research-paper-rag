@@ -19,7 +19,7 @@ const statusDot: Record<Paper["status"], string> = {
 
 const PaperCard = ({ paper, selected, onToggle, onDelete }: PaperCardProps) => {
   return (
-    <div className="group flex items-start gap-2.5 rounded-md px-3 py-2 w-full box-border hover:bg-accent/60 transition-colors">
+    <div className="group flex items-start gap-2.5 rounded-md px-3 py-2 w-full box-border overflow-hidden hover:bg-accent/60 transition-colors">
       <Checkbox
         checked={selected}
         onCheckedChange={onToggle}
