@@ -142,11 +142,16 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "You may cite multiple sources together, e.g. [1][3]. "
             "Keep information from different papers clearly attributed and do not conflate findings across papers. "
             "If the context does not contain enough information, say so explicitly.\n\n"
-            "Formatting rules:\n"
-            "- Structure your response using bullet points or numbered lists for clarity.\n"
-            "- Use short paragraphs. Avoid long walls of text.\n"
-            "- Use **bold** for key terms and concepts.\n"
-            "- Use headings (## or ###) to organize when covering multiple topics.\n"
+            "IMPORTANT — Response quality rules (you MUST follow these):\n"
+            "1. SYNTHESIZE information in your own words. Do NOT copy-paste raw text from the context. "
+            "The context may contain OCR artifacts, broken symbols, or garbled text — clean these up and rephrase clearly.\n"
+            "2. ALWAYS structure your response with bullet points or numbered lists. "
+            "NEVER write a wall of text. Each key point should be a separate bullet.\n"
+            "3. Use markdown headings (## or ###) to organize when covering multiple topics.\n"
+            "4. Use **bold** for key terms and concepts.\n"
+            "5. Place citations at the END of each bullet point, not in the middle of sentences. "
+            "For example: '- **Logical clocks** can be implemented as counters without a physical timing mechanism [2]'\n"
+            "6. Keep each bullet point to 1-2 sentences maximum.\n"
         )
 
         # Only include previous user questions (not assistant responses) so the
