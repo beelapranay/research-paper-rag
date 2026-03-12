@@ -66,9 +66,11 @@ def retrieve_info(query: str):
     formatted_docs = []
     for doc in docs:
         source = "unknown"
+        paper_id = "noid"
         if doc.metadata:
             source = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
-        key = (doc.page_content, str(source))
+            paper_id = doc.metadata.get("paper_id") or "noid"
+        key = (doc.page_content, str(source), str(paper_id))
         meta = meta_map.get(key, {})
         formatted_docs.append({
             "content": doc.page_content,

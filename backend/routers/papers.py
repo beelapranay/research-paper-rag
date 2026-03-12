@@ -52,7 +52,7 @@ def upload_papers(
         meta = get_metadata(path)
 
         title = meta.get("title") or os.path.splitext(file.filename)[0]
-        authors = title  # authors not displayed; keep title for consistency
+        authors = meta.get("authors") or "Unknown"
         year_str = meta.get("year") or "0"
         try:
             year = int(year_str)

@@ -10,7 +10,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 
-from rag.bm25_index import invalidate_bm25_cache
+from rag.bm25_index import invalidate_bm25_cache, build_bm25_index
 from rag.retriever import invalidate_vectorstore_cache
 
 
@@ -260,7 +260,8 @@ def build_index(
     for i, split in enumerate(splits):
         split.metadata["chunk_index"] = i
         source = split.metadata.get("source_file") or split.metadata.get("source") or "unknown"
-        split.metadata["chunk_id"] = f"{source}:{i}"
+        pid = split.metadata.get("paper_id") or "noid"
+        split.metadata["chunk_id"] = f"{pid}:{source}:{i}"
 
     print(f"Split into {len(splits)} chunks from {len(docs)} document(s).")
 
@@ -279,8 +280,9 @@ def build_index(
             persist_directory=CHROMA_DIR,
         )
 
-    # Invalidate caches so subsequent queries see the new data
+    # Invalidate caches and rebuild BM25 eagerly so queries immediately see new data
     invalidate_bm25_cache()
     invalidate_vectorstore_cache()
+    build_bm25_index(force_rebuild=True)
 
     print(f"Indexing complete! {vectorstore._collection.count()} chunks stored.")

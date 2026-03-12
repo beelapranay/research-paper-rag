@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,31 +34,6 @@ def _basename(path: str) -> str:
     return os.path.basename(path).replace("\\", "/").split("/")[-1]
 
 
-def _looks_like_citation(text: str) -> bool:
-    if "Unknown" in text:
-        return True
-    return re.search(r"\b(19|20)\d{2}\b", text) is not None
-
-
-def _strip_citations_stream(text: str, state: dict) -> str:
-    output = []
-    for ch in text:
-        if not state["in_bracket"]:
-            if ch == "[":
-                state["in_bracket"] = True
-                state["buffer"] = "["
-            else:
-                output.append(ch)
-        else:
-            state["buffer"] += ch
-            if ch == "]":
-                buf = state["buffer"]
-                if not _looks_like_citation(buf):
-                    output.append(buf)
-                state["in_bracket"] = False
-                state["buffer"] = ""
-    return "".join(output)
-
 
 @router.post("")
 async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
@@ -73,23 +47,26 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
         docs, meta_map = hybrid_retrieve(request.query, user_id=current_user["id"], paper_ids=request.paper_ids)
 
         context_lines = []
-        for doc in docs:
+        for idx, doc in enumerate(docs, start=1):
             source_raw = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
             source = _basename(source_raw)
+            paper_id = doc.metadata.get("paper_id") or "noid"
             title = doc.metadata.get("title") or source
             year = doc.metadata.get("year") or "Unknown"
-            key = (doc.page_content, str(source_raw))
+            key = (doc.page_content, str(source_raw), str(paper_id))
             meta = meta_map.get(key, {})
             score = meta.get("rerank_score") or meta.get("rrf_score")
             score_str = f"{score:.3f}" if isinstance(score, float) else "n/a"
-            label = f"[{title}, {year}]"
-            context_lines.append(f"{label} (score: {score_str})\n{doc.page_content}")
+            context_lines.append(f"[{idx}] Paper: {title} ({year}) (score: {score_str})\n{doc.page_content}")
 
         context_block = "\n\n".join(context_lines)
 
         system_prompt = (
             "You are a research assistant. Answer using ONLY the provided context. "
-            "Do not include citations or bracketed references in your response. "
+            "The context contains numbered excerpts from research papers, like [1], [2], etc. "
+            "When you use information from a source, cite it inline using its number, e.g. [1]. "
+            "You may cite multiple sources together, e.g. [1][3]. "
+            "Keep information from different papers clearly attributed and do not conflate findings across papers. "
             "If the context does not contain enough information, say so explicitly."
         )
 
@@ -101,22 +78,16 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "content": f"Question: {request.query}\n\nContext:\n{context_block}",
         })
 
-        strip_state = {"in_bracket": False, "buffer": ""}
-
         for chunk in llm.stream(messages):
             if chunk.content:
-                cleaned = _strip_citations_stream(chunk.content, strip_state)
-                if cleaned:
-                    yield f"event: token\ndata: {cleaned}\n\n"
-
-        if strip_state["buffer"]:
-            yield f"event: token\ndata: {strip_state['buffer']}\n\n"
+                yield f"event: token\ndata: {chunk.content}\n\n"
 
         chunks = []
         for doc in docs:
             raw_source = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
             source = _basename(raw_source)
-            key = (doc.page_content, str(raw_source))
+            paper_id = doc.metadata.get("paper_id") or "noid"
+            key = (doc.page_content, str(raw_source), str(paper_id))
             meta = meta_map.get(key, {})
             chunks.append({
                 "id": doc.metadata.get("chunk_id"),

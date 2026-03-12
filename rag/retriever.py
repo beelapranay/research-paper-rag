@@ -49,17 +49,18 @@ def invalidate_vectorstore_cache() -> None:
         _cached_vectorstore = None
 
 
-def _doc_key(doc: Document) -> tuple[str, str]:
+def _doc_key(doc: Document) -> tuple[str, str, str]:
     source = doc.metadata.get("source_file") or doc.metadata.get("source") or "unknown"
-    return (doc.page_content, str(source))
+    paper_id = doc.metadata.get("paper_id") or "noid"
+    return (doc.page_content, str(source), str(paper_id))
 
 
 def _rrf_merge(
     lists: Iterable[List[Document]],
     rrf_k: int = RRF_K,
-) -> Tuple[List[Document], Dict[tuple[str, str], float]]:
-    scores: Dict[tuple[str, str], float] = {}
-    doc_map: Dict[tuple[str, str], Document] = {}
+) -> Tuple[List[Document], Dict[tuple[str, str, str], float]]:
+    scores: Dict[tuple[str, str, str], float] = {}
+    doc_map: Dict[tuple[str, str, str], Document] = {}
 
     for docs in lists:
         for rank, doc in enumerate(docs, start=1):
@@ -100,7 +101,7 @@ def hybrid_retrieve(
     query: str,
     user_id: Optional[str] = None,
     paper_ids: Optional[list[str]] = None,
-) -> Tuple[List[Document], Dict[tuple[str, str], dict]]:
+) -> Tuple[List[Document], Dict[tuple[str, str, str], dict]]:
     if not os.path.isdir(CHROMA_DIR):
         raise FileNotFoundError("Chroma DB not found. Run ingestion first.")
 
@@ -128,7 +129,7 @@ def hybrid_retrieve(
         score_threshold=0.0,
     )
 
-    meta_map: Dict[tuple[str, str], dict] = {}
+    meta_map: Dict[tuple[str, str, str], dict] = {}
     for doc in merged_docs:
         key = _doc_key(doc)
         meta_map[key] = {
