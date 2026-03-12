@@ -62,7 +62,8 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
         context_block = "\n\n".join(context_lines)
 
         system_prompt = (
-            "You are a research assistant. Answer using ONLY the provided context. "
+            "You are a research assistant. Answer using ONLY the Context block attached to the CURRENT question. "
+            "Do NOT use information from previous messages in the conversation — the user may have changed which papers are selected. "
             "The context contains numbered excerpts from research papers, like [1], [2], etc. "
             "When you use information from a source, cite it inline using its number, e.g. [1]. "
             "You may cite multiple sources together, e.g. [1][3]. "
@@ -70,9 +71,15 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "If the context does not contain enough information, say so explicitly."
         )
 
+        # Replace previous assistant responses with a short placeholder so the
+        # LLM can't reuse stale context from previously-selected papers, while
+        # still understanding the conversational thread.
         messages = [{"role": "system", "content": system_prompt}]
         for m in request.chat_history:
-            messages.append({"role": m.role, "content": m.content})
+            if m.role == "assistant":
+                messages.append({"role": "assistant", "content": "(Previous answer based on earlier context — not available for this turn.)"})
+            else:
+                messages.append({"role": m.role, "content": m.content})
         messages.append({
             "role": "user",
             "content": f"Question: {request.query}\n\nContext:\n{context_block}",

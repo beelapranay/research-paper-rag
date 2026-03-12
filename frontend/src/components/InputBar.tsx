@@ -13,11 +13,32 @@ const InputBar = () => {
   const setIsStreaming = useAppStore((s) => s.setIsStreaming);
   const selectedPaperIds = useAppStore((s) => s.selectedPaperIds);
   const messages = useAppStore((s) => s.messages);
+  const papers = useAppStore((s) => s.papers);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSentPaperIds = useRef<Set<string> | null>(null);
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
+
+    // If paper selection changed since last message, insert a system notice
+    if (lastSentPaperIds.current !== null) {
+      const prev = lastSentPaperIds.current;
+      const curr = selectedPaperIds;
+      const changed = prev.size !== curr.size || [...prev].some((id) => !curr.has(id));
+      if (changed) {
+        const selectedNames = papers
+          .filter((p) => curr.has(p.id))
+          .map((p) => p.title)
+          .join(", ");
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "system" as any,
+          content: `Paper selection changed. Now querying: ${selectedNames || "none"}`,
+        });
+      }
+    }
+    lastSentPaperIds.current = new Set(selectedPaperIds);
 
     const userMsg = { id: crypto.randomUUID(), role: "user" as const, content: trimmed };
     addMessage(userMsg);
@@ -25,7 +46,9 @@ const InputBar = () => {
     setIsStreaming(true);
     setText("");
 
-    const history = [...messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
+    const history = [...messages, userMsg]
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.content }));
 
     const res = await apiFetch("/chat", {
       method: "POST",

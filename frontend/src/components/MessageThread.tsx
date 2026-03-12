@@ -33,6 +33,12 @@ const MessageThread = () => {
         {messages.map((msg) =>
           msg.role === "user" ? (
             <UserMessage key={msg.id} content={msg.content} />
+          ) : (msg.role as string) === "system" ? (
+            <div key={msg.id} className="flex justify-center">
+              <span className="text-xs text-muted-foreground bg-muted/60 px-3 py-1 rounded-full italic">
+                {msg.content}
+              </span>
+            </div>
           ) : (
             <AssistantMessage key={msg.id} message={msg} />
           )
