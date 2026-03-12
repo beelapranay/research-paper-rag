@@ -71,15 +71,20 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "If the context does not contain enough information, say so explicitly."
         )
 
-        # Replace previous assistant responses with a short placeholder so the
-        # LLM can't reuse stale context from previously-selected papers, while
-        # still understanding the conversational thread.
+        # Only include previous user questions (not assistant responses) so the
+        # LLM understands conversational flow but cannot reuse content from
+        # previously-selected papers. Keep the last few for coherence.
+        MAX_HISTORY_TURNS = 4
+        prior_questions = [m.content for m in request.chat_history if m.role == "user"]
+        prior_questions = prior_questions[-MAX_HISTORY_TURNS:]
+
         messages = [{"role": "system", "content": system_prompt}]
-        for m in request.chat_history:
-            if m.role == "assistant":
-                messages.append({"role": "assistant", "content": "(Previous answer based on earlier context — not available for this turn.)"})
-            else:
-                messages.append({"role": m.role, "content": m.content})
+        if prior_questions:
+            summary = "Previous questions in this conversation:\n" + "\n".join(
+                f"- {q}" for q in prior_questions
+            )
+            messages.append({"role": "user", "content": summary})
+            messages.append({"role": "assistant", "content": "Understood, I see the prior questions for context."})
         messages.append({
             "role": "user",
             "content": f"Question: {request.query}\n\nContext:\n{context_block}",
