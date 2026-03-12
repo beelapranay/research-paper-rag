@@ -86,18 +86,37 @@ function injectCitations(
   return result;
 }
 
-function processChildren(
-  children: React.ReactNode,
+function processNode(
+  node: React.ReactNode,
   chunks?: RetrievedChunk[]
 ): React.ReactNode {
-  if (!children) return children;
-  const childArray = Array.isArray(children) ? children : [children];
-  return childArray.flatMap((child) => {
-    if (typeof child === "string" && PLACEHOLDER_RE.test(child)) {
-      return injectCitations(child, chunks);
+  if (!node) return node;
+
+  // String leaf — swap placeholders for CitationBadge components
+  if (typeof node === "string") {
+    if (PLACEHOLDER_RE.test(node)) {
+      return injectCitations(node, chunks);
     }
-    return child;
-  });
+    return node;
+  }
+
+  // Array — recurse into each element
+  if (Array.isArray(node)) {
+    return node.flatMap((child) => {
+      const result = processNode(child, chunks);
+      return Array.isArray(result) ? result : [result];
+    });
+  }
+
+  // React element — clone with recursively processed children
+  if (typeof node === "object" && "props" in node) {
+    const { children, ...restProps } = (node as React.ReactElement).props;
+    if (children) {
+      return { ...node, props: { ...restProps, children: processNode(children, chunks) } };
+    }
+  }
+
+  return node;
 }
 
 const AssistantMessage = ({ message }: AssistantMessageProps) => {
@@ -112,16 +131,16 @@ const AssistantMessage = ({ message }: AssistantMessageProps) => {
     () => ({
       p: ({ children }) => (
         <p className="mb-3 last:mb-0 leading-relaxed">
-          {processChildren(children, chunks)}
+          {processNode(children, chunks)}
         </p>
       ),
       li: ({ children }) => (
         <li className="leading-relaxed">
-          {processChildren(children, chunks)}
+          {processNode(children, chunks)}
         </li>
       ),
       td: ({ children }) => (
-        <td className="px-2 py-1">{processChildren(children, chunks)}</td>
+        <td className="px-2 py-1">{processNode(children, chunks)}</td>
       ),
       h1: ({ children }) => (
         <h1 className="text-lg font-display font-semibold mt-4 mb-2">
