@@ -6,7 +6,11 @@ interface ScoreBreakdownTableProps {
 
 const basename = (source: string) => {
   if (!source) return "unknown";
-  return source.replace("\\", "/").split("/").pop() || source;
+  const name = source.replace("\\", "/").split("/").pop() || source;
+  return name.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
+    "",
+  );
 };
 
 const ScoreBreakdownTable = ({ chunks }: ScoreBreakdownTableProps) => {

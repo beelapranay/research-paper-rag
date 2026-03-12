@@ -141,7 +141,12 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
             "When you use information from a source, cite it inline using its number, e.g. [1]. "
             "You may cite multiple sources together, e.g. [1][3]. "
             "Keep information from different papers clearly attributed and do not conflate findings across papers. "
-            "If the context does not contain enough information, say so explicitly."
+            "If the context does not contain enough information, say so explicitly.\n\n"
+            "Formatting rules:\n"
+            "- Structure your response using bullet points or numbered lists for clarity.\n"
+            "- Use short paragraphs. Avoid long walls of text.\n"
+            "- Use **bold** for key terms and concepts.\n"
+            "- Use headings (## or ###) to organize when covering multiple topics.\n"
         )
 
         # Only include previous user questions (not assistant responses) so the

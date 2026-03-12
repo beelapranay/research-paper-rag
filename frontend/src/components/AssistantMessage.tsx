@@ -11,6 +11,12 @@ interface AssistantMessageProps {
 
 const CITE_RE = /\[(\d+)\]/g;
 
+const stripUuidPrefix = (name: string) =>
+  name.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
+    "",
+  );
+
 const CitationBadge = ({
   num,
   chunk,
@@ -29,7 +35,7 @@ const CitationBadge = ({
   }, [chunk, setHighlightedChunkId]);
 
   const label = chunk
-    ? `${chunk.title || chunk.source}${chunk.year ? `, ${chunk.year}` : ""}`
+    ? `${stripUuidPrefix(chunk.title || chunk.source)}${chunk.year ? `, ${chunk.year}` : ""}`
     : `Source ${num}`;
 
   return (
@@ -43,7 +49,7 @@ const CitationBadge = ({
       </span>
       {chunk && (
         <span className="max-w-[10rem] truncate hidden sm:inline">
-          {chunk.title || chunk.source}
+          {stripUuidPrefix(chunk.title || chunk.source)}
         </span>
       )}
     </button>

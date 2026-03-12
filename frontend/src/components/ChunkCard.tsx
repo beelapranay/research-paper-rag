@@ -45,7 +45,7 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
       <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-foreground truncate">
-            {chunk.title || basename(chunk.source)}
+            {basename(chunk.title || chunk.source)}
           </p>
           <p className="text-xs text-muted-foreground truncate">
             {basename(chunk.source)}
