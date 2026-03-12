@@ -67,6 +67,44 @@ async def save_chat_message(request: SaveMessageRequest, current_user=Depends(ge
     return {"saved": True}
 
 
+@router.get("/debug-filters")
+async def debug_filters(current_user=Depends(get_current_user)):
+    """Temporary debug endpoint: shows what paper_ids exist in ChromaDB for this user."""
+    from rag.retriever import _load_vectorstore
+    store = _load_vectorstore()
+    rows = store.get(include=["metadatas"])
+    metadatas = rows.get("metadatas", []) if isinstance(rows, dict) else []
+
+    paper_ids_in_chroma = set()
+    user_ids_in_chroma = set()
+    for m in metadatas:
+        if isinstance(m, dict):
+            pid = m.get("paper_id")
+            uid = m.get("user_id")
+            if pid:
+                paper_ids_in_chroma.add(str(pid))
+            if uid:
+                user_ids_in_chroma.add(str(uid))
+
+    # Get paper_ids from SQLite for this user
+    from backend.db import get_conn
+    with get_conn() as conn:
+        cur = conn.execute("SELECT id, title, status FROM papers WHERE user_id = ?", (current_user["id"],))
+        db_papers = [{"id": r["id"], "title": r["title"], "status": r["status"]} for r in cur.fetchall()]
+
+    db_paper_ids = {p["id"] for p in db_papers}
+    missing_in_chroma = db_paper_ids - paper_ids_in_chroma
+
+    return {
+        "current_user_id": current_user["id"],
+        "user_ids_in_chroma": sorted(user_ids_in_chroma),
+        "paper_ids_in_chroma": sorted(paper_ids_in_chroma),
+        "papers_in_db": db_papers,
+        "missing_in_chroma": sorted(missing_in_chroma),
+        "total_chunks": len(metadatas),
+    }
+
+
 @router.post("")
 async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
     api_key = os.getenv("GOOGLE_API_KEY")

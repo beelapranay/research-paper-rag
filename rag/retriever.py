@@ -111,13 +111,6 @@ def hybrid_retrieve(
     bm25_docs = bm25_search(query, k=K_BM25, user_id=user_id, paper_ids=paper_ids)
     vector_docs = _retrieve_vector(vectorstore, query, where)
 
-    # If paper_ids were explicitly provided, never fall back to unfiltered search.
-    # Only fall back when no paper_ids were requested (i.e. the filter is just user_id)
-    # and both searches returned nothing — this handles legacy data ingested without IDs.
-    if where and not paper_ids and not bm25_docs and not vector_docs:
-        bm25_docs = bm25_search(query, k=K_BM25)
-        vector_docs = _retrieve_vector(vectorstore, query, None)
-
     bm25_rank = {_doc_key(doc): i + 1 for i, doc in enumerate(bm25_docs)}
     vector_rank = {_doc_key(doc): i + 1 for i, doc in enumerate(vector_docs)}
 

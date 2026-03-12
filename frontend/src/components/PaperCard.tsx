@@ -13,6 +13,7 @@ interface PaperCardProps {
 const statusDot: Record<Paper["status"], string> = {
   indexed: "bg-score-high",
   indexing: "bg-score-mid animate-pulse-soft",
+  processing: "bg-score-mid animate-pulse-soft",
   failed: "bg-score-low",
 };
 
