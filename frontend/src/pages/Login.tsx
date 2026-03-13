@@ -1,24 +1,24 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
 import { BookOpen, Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { apiFetch, setToken } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setIsLoading(true);
 
     try {
       const res = await apiFetch("/auth/login", {
@@ -26,97 +26,89 @@ const Login = () => {
         body: JSON.stringify({ email, password }),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || "Login failed");
+        toast({
+          title: "Login failed",
+          description: data.detail || "Invalid credentials.",
+          variant: "destructive",
+        });
+        return;
       }
 
-      const data = await res.json().catch(() => null);
       if (!data?.access_token) {
-        throw new Error("Invalid response from server");
+        toast({ title: "Login failed", description: "Missing access token.", variant: "destructive" });
+        return;
       }
+
       setToken(data.access_token);
       navigate("/");
-    } catch (err: any) {
-      toast({ title: "Login failed", description: err.message || "Please try again." });
+    } catch {
+      toast({ title: "Login failed", description: "Please try again.", variant: "destructive" });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo / brand */}
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
-            <BookOpen className="h-6 w-6 text-primary-foreground" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md border border-border/60 shadow-lg">
+        <CardContent className="p-8 space-y-6">
+          <div className="flex flex-col items-center text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center">
+              <BookOpen className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <h1 className="text-2xl font-semibold">Welcome back</h1>
+            <p className="text-sm text-muted-foreground">Log in to continue your research</p>
           </div>
-          <h1 className="font-display text-2xl font-semibold text-foreground">Welcome back</h1>
-          <p className="text-sm text-muted-foreground">Sign in to continue your research</p>
-        </div>
 
-        <Card className="border-border/60 shadow-md">
-          <form onSubmit={handleSubmit}>
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg font-display">Sign in</CardTitle>
-              <CardDescription>Enter your credentials to access PaperRAG</CardDescription>
-            </CardHeader>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <div className="relative">
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@university.edu"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <Link to="/forgot-password" className="text-xs text-primary hover:underline">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </CardContent>
-
-            <CardFooter className="flex flex-col gap-3">
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in…" : "Sign in"}
-              </Button>
-              <p className="text-sm text-muted-foreground text-center">
-                Don't have an account?{" "}
-                <Link to="/signup" className="text-primary font-medium hover:underline">
-                  Sign up
-                </Link>
-              </p>
-            </CardFooter>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Log in"}
+            </Button>
           </form>
-        </Card>
-      </div>
+
+          <p className="text-sm text-center text-muted-foreground">
+            Don't have an account?{" "}
+            <button onClick={() => navigate("/signup")} className="text-primary hover:underline">
+              Sign up
+            </button>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 };

@@ -29,7 +29,7 @@ const PaperCard = ({ paper, selected, onToggle, onDelete }: PaperCardProps) => {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className={cn("h-2 w-2 rounded-full shrink-0", statusDot[paper.status])} />
-          <p className="text-sm font-medium truncate leading-tight">{paper.title}</p>
+          <p className="text-sm font-medium truncate leading-tight">{paper.filename}</p>
         </div>
       </div>
       <button

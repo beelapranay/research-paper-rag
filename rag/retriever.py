@@ -120,7 +120,7 @@ def hybrid_retrieve(
     reranked_docs, rerank_scores, _backend = rerank_documents(
         query=query,
         docs=merged_docs,
-        top_n=5,
+        top_n=20,
         score_threshold=0.0,
     )
 

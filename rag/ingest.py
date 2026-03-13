@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from typing import Iterable
 
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PDFPlumberLoader
+from langchain_community.document_loaders import PDFPlumberLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
@@ -19,6 +19,20 @@ CHROMA_DIR = os.path.join(_PROJECT_ROOT, "chroma_db")
 DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 300
+
+
+def _load_pdf(file_path: str) -> list:
+    """Prefer pypdf extraction; fall back to pdfplumber for problematic files."""
+    loaders = (PyPDFLoader, PDFPlumberLoader)
+    last_error = None
+    for loader_cls in loaders:
+        try:
+            return loader_cls(file_path).load()
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
 
 
 def _clean_text(text: str) -> str:
@@ -167,8 +181,7 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
 
 
 def extract_pdf_metadata(file_path: str) -> dict[str, str]:
-    loader = PDFPlumberLoader(file_path)
-    docs = loader.load()
+    docs = _load_pdf(file_path)
     if not docs:
         base = os.path.splitext(os.path.basename(file_path))[0]
         return {
@@ -227,8 +240,7 @@ def build_index(
 
     docs = []
     for path in pdf_files:
-        loader = PDFPlumberLoader(path)
-        file_docs = loader.load()
+        file_docs = _load_pdf(path)
         # Strip UUID prefix added by save_uploads (e.g. "ab12cd34_paper.pdf" -> "paper.pdf")
         raw_name = os.path.basename(path)
         filename = re.sub(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_", "", raw_name)

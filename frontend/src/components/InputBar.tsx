@@ -36,7 +36,7 @@ const InputBar = () => {
       if (changed) {
         const selectedNames = papers
           .filter((p) => curr.has(p.id))
-          .map((p) => p.title)
+          .map((p) => p.filename)
           .join(", ");
         addMessage({
           id: crypto.randomUUID(),
@@ -91,9 +91,16 @@ const InputBar = () => {
         if (part.startsWith("event: token")) {
           const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (dataLine) {
-            const token = dataLine.replace("data: ", "");
-            assistantText += token;
-            updateLastAssistantMessage(assistantText);
+            try {
+              const payload = JSON.parse(dataLine.replace("data: ", ""));
+              const token = typeof payload?.token === "string" ? payload.token : "";
+              assistantText += token;
+              updateLastAssistantMessage(assistantText);
+            } catch {
+              const token = dataLine.replace("data: ", "");
+              assistantText += token;
+              updateLastAssistantMessage(assistantText);
+            }
           }
         }
 

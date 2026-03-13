@@ -57,7 +57,7 @@ const ChunkCard = ({ chunk }: ChunkCardProps) => {
           {chunk.rerankScore.toFixed(2)}
         </span>
       </div>
-      <p className="text-xs leading-relaxed text-muted-foreground break-all">
+      <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
         {truncatedContent}
         {chunk.content.length > 180 && (
           <button

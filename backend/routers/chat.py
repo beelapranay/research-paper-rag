@@ -188,7 +188,8 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)):
 
         for chunk in llm.stream(messages):
             if chunk.content:
-                yield f"event: token\ndata: {chunk.content}\n\n"
+                # JSON-encode streamed text so markdown markers and newlines survive SSE framing.
+                yield f"event: token\ndata: {json.dumps({'token': chunk.content})}\n\n"
 
         chunks = []
         for doc in docs:
