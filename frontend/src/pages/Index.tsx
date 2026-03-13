@@ -16,11 +16,13 @@ const Index = () => {
   const [leftOpen, setLeftOpen] = useState(false);
   const [rightOpen, setRightOpen] = useState(false);
   const setPapers = useAppStore((s) => s.setPapers);
+  const setMessages = useAppStore((s) => s.setMessages);
   const { toast } = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
+
     const loadPapers = async () => {
       try {
         const res = await apiFetch("/papers");
@@ -39,9 +41,41 @@ const Index = () => {
         if (!cancelled) toast({ title: "Failed to load papers" });
       }
     };
+
+    const loadChatHistory = async () => {
+      try {
+        const res = await apiFetch("/chat/history");
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          const messages = data.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            chunks: m.chunks?.map((c: any, i: number) => ({
+              id: c.id || `chunk_${i}`,
+              content: c.content,
+              source: c.source_file,
+              title: c.title,
+              authors: c.authors || "",
+              year: c.year || 0,
+              bm25Rank: c.bm25_rank || 0,
+              vectorRank: c.vector_rank || 0,
+              rrfScore: c.rrf_score || 0,
+              rerankScore: c.rerank_score || 0,
+            })),
+          }));
+          setMessages(messages);
+        }
+      } catch {
+        // Chat history is non-critical — fail silently
+      }
+    };
+
     loadPapers();
+    loadChatHistory();
     return () => { cancelled = true; };
-  }, [setPapers, toast, navigate]);
+  }, [setPapers, setMessages, toast, navigate]);
 
   if (isMobile) {
     return (
@@ -83,7 +117,7 @@ const Index = () => {
 
   return (
     <div className="flex h-screen bg-background">
-      <aside className="w-[280px] border-r border-border bg-sidebar shrink-0">
+      <aside className="w-[280px] border-r border-border bg-sidebar shrink-0 overflow-hidden">
         <LeftSidebar />
       </aside>
 
@@ -91,7 +125,7 @@ const Index = () => {
         <ChatPanel />
       </main>
 
-      <aside className="w-[320px] border-l border-border bg-sidebar shrink-0">
+      <aside className="w-[320px] border-l border-border bg-sidebar shrink-0 overflow-hidden">
         <RightSidebar />
       </aside>
     </div>

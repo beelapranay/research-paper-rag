@@ -54,7 +54,8 @@ def _build_allowed_refs(chunks: List[dict]) -> Dict[str, str]:
 
 def parse_response(answer: str, context_chunks: List[dict]) -> Tuple[RAGResponse, bool]:
     allowed = _build_allowed_refs(context_chunks)
-    pattern = re.compile(r"\[[^\]]+?,\s*\d{4}[a-z]?\]")
+    # Match citations like [Author, 2024], [Author et al., 2024a], or [Author 2024]
+    pattern = re.compile(r"\[[^\]]+?(?:,\s*|\s+)\d{4}[a-z]?\]")
     refs = pattern.findall(answer)
 
     citations: List[Citation] = []

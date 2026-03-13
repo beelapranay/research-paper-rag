@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { useAppStore } from "@/store/useAppStore";
 import { apiFetch } from "@/lib/api";
 
+const persistMessage = (id: string, role: string, content: string, chunks?: any[]) => {
+  apiFetch("/chat/save", {
+    method: "POST",
+    body: JSON.stringify({ id, role, content, chunks: chunks || [] }),
+  }).catch(() => {});
+};
+
 const InputBar = () => {
   const [text, setText] = useState("");
   const isStreaming = useAppStore((s) => s.isStreaming);
@@ -13,19 +20,44 @@ const InputBar = () => {
   const setIsStreaming = useAppStore((s) => s.setIsStreaming);
   const selectedPaperIds = useAppStore((s) => s.selectedPaperIds);
   const messages = useAppStore((s) => s.messages);
+  const papers = useAppStore((s) => s.papers);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lastSentPaperIds = useRef<Set<string> | null>(null);
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
 
+    // If paper selection changed since last message, insert a system notice
+    if (lastSentPaperIds.current !== null) {
+      const prev = lastSentPaperIds.current;
+      const curr = selectedPaperIds;
+      const changed = prev.size !== curr.size || [...prev].some((id) => !curr.has(id));
+      if (changed) {
+        const selectedNames = papers
+          .filter((p) => curr.has(p.id))
+          .map((p) => p.filename)
+          .join(", ");
+        addMessage({
+          id: crypto.randomUUID(),
+          role: "system" as any,
+          content: `Paper selection changed. Now querying: ${selectedNames || "none"}`,
+        });
+      }
+    }
+    lastSentPaperIds.current = new Set(selectedPaperIds);
+
     const userMsg = { id: crypto.randomUUID(), role: "user" as const, content: trimmed };
+    const assistantId = crypto.randomUUID();
     addMessage(userMsg);
-    addMessage({ id: crypto.randomUUID(), role: "assistant", content: "", isStreaming: true });
+    addMessage({ id: assistantId, role: "assistant", content: "", isStreaming: true });
+    persistMessage(userMsg.id, "user", trimmed);
     setIsStreaming(true);
     setText("");
 
-    const history = [...messages, userMsg].map((m) => ({ role: m.role, content: m.content }));
+    const history = [...messages, userMsg]
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.content }));
 
     const res = await apiFetch("/chat", {
       method: "POST",
@@ -46,7 +78,6 @@ const InputBar = () => {
     const decoder = new TextDecoder();
     let buffer = "";
     let assistantText = "";
-    let finalCitations: any[] = [];
     let finalChunks: any[] = [];
 
     while (true) {
@@ -60,9 +91,16 @@ const InputBar = () => {
         if (part.startsWith("event: token")) {
           const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (dataLine) {
-            const token = dataLine.replace("data: ", "");
-            assistantText += token;
-            updateLastAssistantMessage(assistantText);
+            try {
+              const payload = JSON.parse(dataLine.replace("data: ", ""));
+              const token = typeof payload?.token === "string" ? payload.token : "";
+              assistantText += token;
+              updateLastAssistantMessage(assistantText);
+            } catch {
+              const token = dataLine.replace("data: ", "");
+              assistantText += token;
+              updateLastAssistantMessage(assistantText);
+            }
           }
         }
 
@@ -70,12 +108,12 @@ const InputBar = () => {
           const dataLine = part.split("\n").find((l) => l.startsWith("data: "));
           if (dataLine) {
             const payload = JSON.parse(dataLine.replace("data: ", ""));
-            finalCitations = payload.citations || [];
             finalChunks = (payload.chunks || []).map((c: any, i: number) => ({
               id: c.id || `chunk_${i}`,
               content: c.content,
               source: c.source_file,
-              authors: c.authors || "Unknown",
+              title: c.title,
+              authors: c.authors || "",
               year: c.year || 0,
               bm25Rank: c.bm25_rank || 0,
               vectorRank: c.vector_rank || 0,
@@ -87,7 +125,22 @@ const InputBar = () => {
       }
     }
 
-    finalizeAssistantMessage(finalCitations, finalChunks);
+    finalizeAssistantMessage(finalChunks);
+
+    // Persist the assistant response with chunk metadata
+    const chunksForDb = finalChunks.map((c: any) => ({
+      id: c.id,
+      content: c.content,
+      source_file: c.source,
+      title: c.title,
+      authors: c.authors,
+      year: c.year,
+      bm25_rank: c.bm25Rank,
+      vector_rank: c.vectorRank,
+      rrf_score: c.rrfScore,
+      rerank_score: c.rerankScore,
+    }));
+    persistMessage(assistantId, "assistant", assistantText, chunksForDb);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

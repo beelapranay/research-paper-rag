@@ -54,7 +54,10 @@ const LeftSidebar = () => {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        toast({ title: "Upload failed", description: err.detail || "Try again." });
+        toast({
+          title: res.status === 409 ? "Duplicate paper" : "Upload failed",
+          description: err.detail || "Try again.",
+        });
         return;
       }
 
@@ -74,7 +77,6 @@ const LeftSidebar = () => {
         });
       });
 
-      // Poll status until no papers are still processing
       if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
       const poll = async () => {
         try {
@@ -82,8 +84,21 @@ const LeftSidebar = () => {
           if (!res2.ok) return;
           const data: PaperResponse[] = await res2.json();
           if (!Array.isArray(data)) return;
-          data.forEach((p) => updatePaperStatus(p.id, p.status));
-          const hasProcessing = data.some((p) => p.status === "processing");
+          data.forEach((p) => {
+            updatePaperStatus(p.id, p.status);
+            // Update metadata that was resolved during ingestion
+            const existing = useAppStore.getState().papers.find((ep) => ep.id === p.id);
+            if (existing && p.title && existing.title !== p.title) {
+              useAppStore.setState((s) => ({
+                papers: s.papers.map((ep) =>
+                  ep.id === p.id
+                    ? { ...ep, title: p.title || ep.title, authors: p.authors || ep.authors, year: p.year || ep.year }
+                    : ep
+                ),
+              }));
+            }
+          });
+          const hasProcessing = data.some((p) => p.status === "processing" || p.status === "indexing");
           if (hasProcessing) {
             pollTimeoutRef.current = setTimeout(poll, 2000);
           }
@@ -132,7 +147,7 @@ const LeftSidebar = () => {
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-0.5">
+        <div className="px-3 py-2 space-y-1">
           {papers.map((paper) => (
             <PaperCard
               key={paper.id}

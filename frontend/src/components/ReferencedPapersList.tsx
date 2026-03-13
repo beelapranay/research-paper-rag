@@ -6,7 +6,18 @@ interface ReferencedPapersListProps {
 
 const basename = (source: string) => {
   if (!source) return "unknown";
-  return source.replace("\\", "/").split("/").pop() || source;
+  const name = source.replace("\\", "/").split("/").pop() || source;
+  return name.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
+    "",
+  );
+};
+
+const cleanTitle = (title: string) => {
+  return title.replace(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/,
+    "",
+  );
 };
 
 const ReferencedPapersList = ({ chunks }: ReferencedPapersListProps) => {
@@ -23,8 +34,14 @@ const ReferencedPapersList = ({ chunks }: ReferencedPapersListProps) => {
         <div key={paper.source} className="flex items-start gap-2 px-1">
           <span className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
           <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground leading-tight">{paper.authors}</p>
-            <p className="text-xs text-muted-foreground">{basename(paper.source)} · {paper.year}</p>
+            <p className="text-xs font-medium text-foreground leading-tight truncate">
+              {cleanTitle(paper.title || basename(paper.source))}
+            </p>
+            <p className="text-xs text-muted-foreground truncate">
+              {basename(paper.source)}
+              {paper.year && paper.year > 0 ? ` · ${paper.year}` : ""}
+              {paper.authors && paper.authors !== "Unknown" ? ` · ${paper.authors}` : ""}
+            </p>
           </div>
         </div>
       ))}

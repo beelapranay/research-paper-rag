@@ -5,20 +5,38 @@ from collections import Counter, defaultdict
 from typing import Iterable
 
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PDFPlumberLoader
+from langchain_community.document_loaders import PDFPlumberLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 
+from rag.bm25_index import invalidate_bm25_cache, build_bm25_index
+from rag.retriever import invalidate_vectorstore_cache
 
-CHROMA_DIR = "./chroma_db"
-DATA_DIR = "./data"
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CHROMA_DIR = os.path.join(_PROJECT_ROOT, "chroma_db")
+DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
 CHUNK_SIZE = 1500
 CHUNK_OVERLAP = 300
 
 
+def _load_pdf(file_path: str) -> list:
+    """Prefer pypdf extraction; fall back to pdfplumber for problematic files."""
+    loaders = (PyPDFLoader, PDFPlumberLoader)
+    last_error = None
+    for loader_cls in loaders:
+        try:
+            return loader_cls(file_path).load()
+        except Exception as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    return []
+
+
 def _clean_text(text: str) -> str:
-    """Normalize whitespace, fix ligatures, and remove non-printables."""
+    """Normalize whitespace, fix ligatures, remove non-printables, and fix missing spaces."""
     ligatures = {
         "ﬁ": "fi",
         "ﬂ": "fl",
@@ -31,9 +49,22 @@ def _clean_text(text: str) -> str:
     for src, dst in ligatures.items():
         text = text.replace(src, dst)
 
-    # Remove zero-width and non-printable characters
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    # Collapse runs of whitespace/newlines into a single space
+    # Fix garbled arrow symbols from PDF extraction of mathematical notation
+    text = text.replace("---~", "→")
+    text = text.replace("--~", "→")
+    text = re.sub(r"(?<!\-)-→", "→", text)  # -→ to →
+    text = text.replace("-->", "→")
+    text = text.replace("->", "→")
+    text = text.replace("<--", "←")
+    text = text.replace("<-", "←")
+    # Insert space between a lowercase letter and an uppercase letter (camelCase joins
+    # from PDF extraction, e.g. "rewardstates" won't match but "rewardStates" will).
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+    # Insert space between a letter/closing-paren and an opening paren: "word(x)" -> "word (x)"
+    text = re.sub(r"([a-zA-Z)])(\()", r"\1 \2", text)
+    # Insert space between a closing paren and a letter: "(x)word" -> "(x) word"
+    text = re.sub(r"(\))([a-zA-Z])", r"\1 \2", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
@@ -83,7 +114,6 @@ def _strip_headers_footers(docs: list) -> None:
             if count >= threshold and len(line) < 120
         }
 
-        # Always remove pure page-number lines
         for i, lines in enumerate(page_lines):
             filtered = []
             for line in lines:
@@ -98,11 +128,20 @@ def _strip_headers_footers(docs: list) -> None:
             pages[i].page_content = "\n".join(filtered)
 
 
-def _is_name_line(line: str) -> bool:
-    if "@" in line:
+def _looks_like_author_line(line: str) -> bool:
+    if len(line) < 3 or len(line) > 300:
         return False
-    caps = re.findall(r"\b[A-Z][a-z]+\b", line)
-    return len(caps) >= 2 and len(line) <= 120
+    skip_starts = ("abstract", "introduction", "keywords", "doi", "http", "arxiv", "©")
+    if line.lower().startswith(skip_starts):
+        return False
+    # Heuristic: author lines typically contain commas or "and", with mostly
+    # capitalized words and few digits (unlike titles which are longer phrases).
+    has_separator = "," in line or " and " in line.lower()
+    digit_ratio = sum(c.isdigit() for c in line) / max(len(line), 1)
+    cap_words = sum(1 for w in line.split() if w[0:1].isupper())
+    if has_separator and digit_ratio < 0.15 and cap_words >= 2:
+        return True
+    return False
 
 
 def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]:
@@ -111,22 +150,21 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
     authors = ""
     year = ""
 
-    for line in lines:
+    title_idx = -1
+    for i, line in enumerate(lines):
         if 10 <= len(line) <= 200 and not line.lower().startswith("abstract"):
             title = line
+            title_idx = i
             break
 
-    for line in lines[1:8]:
-        if "abstract" in line.lower():
-            continue
-        if "@" in line:
-            continue
-        if "," in line or " and " in line:
-            authors = line
-            break
-        if _is_name_line(line):
-            authors = line
-            break
+    # Look for author-like lines immediately after the title
+    if title_idx >= 0:
+        for line in lines[title_idx + 1 : title_idx + 5]:
+            if line.lower().startswith("abstract"):
+                break
+            if _looks_like_author_line(line):
+                authors = line
+                break
 
     match = re.search(r"(19|20)\d{2}", first_page_text)
     if match:
@@ -143,11 +181,11 @@ def _extract_doc_metadata(first_page_text: str, filename: str) -> dict[str, str]
 
 
 def extract_pdf_metadata(file_path: str) -> dict[str, str]:
-    loader = PDFPlumberLoader(file_path)
-    docs = loader.load()
+    docs = _load_pdf(file_path)
     if not docs:
+        base = os.path.splitext(os.path.basename(file_path))[0]
         return {
-            "title": os.path.splitext(os.path.basename(file_path))[0],
+            "title": base,
             "authors": "Unknown",
             "year": "Unknown",
         }
@@ -158,6 +196,7 @@ def build_index(
     file_paths: list[str] | None = None,
     force_rebuild: bool = False,
     user_id: str | None = None,
+    paper_id: str | None = None,
 ) -> None:
     load_dotenv()
 
@@ -169,7 +208,6 @@ def build_index(
         print("No PDF files found. Add PDFs to ./data or pass file paths.")
         return
 
-    # Wipe existing DB to prevent duplicates on re-ingestion
     if os.path.isdir(CHROMA_DIR):
         if force_rebuild:
             shutil.rmtree(CHROMA_DIR)
@@ -200,33 +238,32 @@ def build_index(
                 print("All PDFs are already indexed. Pass force_rebuild=True to re-index.")
                 return
 
-    # 1. Load PDFs (one Document per page)
     docs = []
     for path in pdf_files:
-        loader = PDFPlumberLoader(path)
-        file_docs = loader.load()
-        filename = os.path.basename(path)
+        file_docs = _load_pdf(path)
+        # Strip UUID prefix added by save_uploads (e.g. "ab12cd34_paper.pdf" -> "paper.pdf")
+        raw_name = os.path.basename(path)
+        filename = re.sub(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_", "", raw_name)
         for doc in file_docs:
             doc.metadata["source_file"] = filename
             doc.metadata["source_path"] = os.path.abspath(path)
             doc.metadata["source"] = filename
             if user_id:
                 doc.metadata["user_id"] = user_id
+            if paper_id:
+                doc.metadata["paper_id"] = paper_id
         docs.extend(file_docs)
 
-    # 2. Remove headers/footers, clean text
     _strip_headers_footers(docs)
     for doc in docs:
         doc.page_content = _clean_text(doc.page_content)
 
-    # Remove docs that are essentially empty after cleaning
     docs = [doc for doc in docs if len(doc.page_content) > 100]
 
     if not docs:
         print("No content found after cleaning. Check your PDFs.")
         return
 
-    # 3. Attach doc-level metadata (title/authors/year)
     first_page_by_source: dict[str, str] = {}
     for doc in docs:
         source = doc.metadata.get("source_path") or doc.metadata.get("source_file") or "unknown"
@@ -242,35 +279,41 @@ def build_index(
         source = doc.metadata.get("source_path") or doc.metadata.get("source_file") or "unknown"
         doc.metadata.update(meta_by_source.get(source, {}))
 
-    # 4. Split — larger chunks to preserve more context per embedding
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
         chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ". ", " ", ""],  # Prefer paragraph > sentence > word breaks
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
     splits = text_splitter.split_documents(docs)
 
-    # Attach chunk index to metadata for debugging
     for i, split in enumerate(splits):
         split.metadata["chunk_index"] = i
+        source = split.metadata.get("source_file") or split.metadata.get("source") or "unknown"
+        # Use short paper_id prefix (first 8 chars) for readability
+        pid = split.metadata.get("paper_id") or "noid"
+        short_pid = pid[:8] if len(pid) > 8 else pid
+        split.metadata["chunk_id"] = f"{short_pid}:{source}:{i}"
 
     print(f"Split into {len(splits)} chunks from {len(docs)} document(s).")
 
     embedding = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
-    # 5. Embed and store
     if os.path.isdir(CHROMA_DIR) and not force_rebuild:
         vectorstore = Chroma(
             persist_directory=CHROMA_DIR,
             embedding_function=embedding,
         )
         vectorstore.add_documents(splits)
-        vectorstore.persist()
     else:
         vectorstore = Chroma.from_documents(
             documents=splits,
             embedding=embedding,
             persist_directory=CHROMA_DIR,
         )
+
+    # Invalidate caches and rebuild BM25 eagerly so queries immediately see new data
+    invalidate_bm25_cache()
+    invalidate_vectorstore_cache()
+    build_bm25_index(force_rebuild=True)
 
     print(f"Indexing complete! {vectorstore._collection.count()} chunks stored.")

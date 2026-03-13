@@ -19,9 +19,10 @@ interface AppState {
   deselectAllPapers: () => void;
 
   // Chat actions
+  setMessages: (messages: Message[]) => void;
   addMessage: (message: Message) => void;
   updateLastAssistantMessage: (content: string) => void;
-  finalizeAssistantMessage: (citations: Message["citations"], chunks: RetrievedChunk[]) => void;
+  finalizeAssistantMessage: (chunks: RetrievedChunk[]) => void;
   clearChat: () => void;
   setIsStreaming: (v: boolean) => void;
 
@@ -52,7 +53,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { papers: s.papers.filter((p) => p.id !== id), selectedPaperIds: next };
     }),
   updatePaperStatus: (id, status) =>
-    set((s) => ({ papers: s.papers.map((p) => (p.id === id ? { ...p, status } : p)) })),
+    set((s) => {
+      const next = new Set(s.selectedPaperIds);
+      if (status === "indexed") next.add(id);
+      return {
+        papers: s.papers.map((p) => (p.id === id ? { ...p, status } : p)),
+        selectedPaperIds: next,
+      };
+    }),
   togglePaperSelection: (id) =>
     set((s) => {
       const next = new Set(s.selectedPaperIds);
@@ -63,6 +71,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ selectedPaperIds: new Set(s.papers.filter((p) => p.status === "indexed").map((p) => p.id)) })),
   deselectAllPapers: () => set({ selectedPaperIds: new Set() }),
 
+  setMessages: (messages) => set({ messages }),
   addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
   updateLastAssistantMessage: (content) =>
     set((s) => {
@@ -72,12 +81,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, content };
       return { messages: msgs };
     }),
-  finalizeAssistantMessage: (citations, chunks) =>
+  finalizeAssistantMessage: (chunks) =>
     set((s) => {
       const msgs = [...s.messages];
       if (msgs.length === 0) return { messages: msgs, activeChunks: chunks, isStreaming: false };
       const last = msgs[msgs.length - 1];
-      if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, citations, chunks, isStreaming: false };
+      if (last?.role === "assistant") msgs[msgs.length - 1] = { ...last, chunks, isStreaming: false };
       return { messages: msgs, activeChunks: chunks, isStreaming: false };
     }),
   clearChat: () => set({ messages: [], activeChunks: [], highlightedChunkId: null }),
